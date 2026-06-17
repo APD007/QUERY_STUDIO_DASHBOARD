@@ -127,12 +127,19 @@ function selectItemSql(item: SelectItem, index: number, opts: BuildSqlOptions): 
   return item.label && item.label !== autoLabel ? `${exprSql} AS ${item.label}` : exprSql;
 }
 
+function joinClauseSql(query: Query): string {
+  return query.joins.map(j => ` ${j.type} JOIN ${j.rightTable} ON ${j.leftKey} = ${j.rightKey}`).join('');
+}
+
 export function buildQuerySql(query: Query, opts: BuildSqlOptions = {}): string {
   const selectSql = query.select.length
     ? query.select.map((it, i) => selectItemSql(it, i, opts)).join(', ')
     : '*';
 
-  let sql = `SELECT ${selectSql} FROM ${opts.forExecution ? '?' : query.source}`;
+  // Joins need every table registered under its real name in alasql, so executing
+  // a joined query skips the `?` param-binding trick used for the single-table case.
+  const fromSql = opts.forExecution && !query.joins.length ? '?' : query.source;
+  let sql = `SELECT ${selectSql} FROM ${fromSql}${joinClauseSql(query)}`;
 
   const whereSql = logicalToSql(query.where);
   if (whereSql) sql += ` WHERE ${whereSql}`;
@@ -158,7 +165,7 @@ export function buildDisplaySql(query: Query): string {
     ? query.select.map((it, i) => selectItemSql(it, i, {})).join(',\n       ')
     : '*';
 
-  const lines = [`SELECT ${selectSql}`, `FROM ${query.source}`];
+  const lines = [`SELECT ${selectSql}`, `FROM ${query.source}${joinClauseSql(query)}`];
 
   const whereSql = logicalToSql(query.where);
   if (whereSql) lines.push(`WHERE ${whereSql}`);

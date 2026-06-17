@@ -56,7 +56,7 @@ export default function QueryBuilderPage({
   onGoToStudio: () => void;
   onGoToDashboard: () => void;
 }) {
-  const { data, schema, sourceName, loadCSV, resetSample } = useDataStore();
+  const { data, schema, sourceName, loadCSV, resetSample, joinTables, loadJoinTable } = useDataStore();
   const { queries, saveQuery, deleteQuery } = useQueryStore();
   const { addWidget } = useWidgetStore();
 
@@ -79,7 +79,20 @@ export default function QueryBuilderPage({
   const wrapNodeInGroup = useQueryDraftStore(s => s.wrapNodeInGroup);
   const setGroupOp = useQueryDraftStore(s => s.setGroupOp);
   const setOrderByToItemLabel = useQueryDraftStore(s => s.setOrderByToItemLabel);
+  const addJoin = useQueryDraftStore(s => s.addJoin);
+  const removeJoin = useQueryDraftStore(s => s.removeJoin);
   const setSql = useSqlEditorStore(s => s.setSql);
+
+  // Fields from joined tables, exposed under a qualified name (e.g. "dim_vendor.region")
+  // so every existing schema-driven control (Select/GroupBy/Filter/validation) can use
+  // them without any per-component change.
+  const schemaForJoins = (joins: typeof draft.joins) => joins.reduce((acc, j) => {
+    const t = joinTables[j.rightTable];
+    if (!t) return acc;
+    const qualified = t.schema.map(s => ({ ...s, name: `${j.rightTable}.${s.name}` }));
+    return acc.concat(qualified);
+  }, schema);
+  const combinedSchema = schemaForJoins(draft.joins);
 
   const [step, setStep] = useState<Step>('dataset');
   const [advanced, setAdvanced] = useState(false);
@@ -116,11 +129,11 @@ export default function QueryBuilderPage({
   };
 
   const run = () => {
-    const v = validateQuery(draft, schema);
+    const v = validateQuery(draft, combinedSchema);
     setValidation(v);
     if (!v.ok) { setResult(null); return; }
     try {
-      setResult(runQuery(draft, data, schema));
+      setResult(runQuery(draft, data, combinedSchema));
     } catch (err) {
       setValidation({ ok: false, errors: [{ message: (err as Error).message }] });
     }
@@ -132,14 +145,14 @@ export default function QueryBuilderPage({
     const spec = { field: label, dir: flipped };
     setOrderBy(spec);
     const next = { ...draft, orderBy: spec };
-    const v = validateQuery(next, schema);
+    const v = validateQuery(next, combinedSchema);
     if (v.ok) {
-      try { setResult(runQuery(next, data, schema)); } catch { /* ignore */ }
+      try { setResult(runQuery(next, data, combinedSchema)); } catch { /* ignore */ }
     }
   };
 
   const doSave = () => {
-    const v = validateQuery(draft, schema);
+    const v = validateQuery(draft, combinedSchema);
     setValidation(v);
     if (!v.ok) return null;
     const id = saveQuery(draft);
@@ -148,12 +161,12 @@ export default function QueryBuilderPage({
   };
 
   const openWidgetForm = () => {
-    const v = validateQuery(draft, schema);
+    const v = validateQuery(draft, combinedSchema);
     setValidation(v);
     if (!v.ok) return;
     let res = result;
     if (!res) {
-      try { res = runQuery(draft, data, schema); setResult(res); } catch { return; }
+      try { res = runQuery(draft, data, combinedSchema); setResult(res); } catch { return; }
     }
     const id = saveQuery(draft);
     setDraft({ ...draft, id });
@@ -255,7 +268,7 @@ export default function QueryBuilderPage({
       </div>
       <SelectBuilder
         select={draft.select}
-        schema={schema}
+        schema={combinedSchema}
         orderByField={draft.orderBy?.field ?? null}
         onAdd={item => addSelectItem(item)}
         onRemove={removeSelectItem}
@@ -269,7 +282,7 @@ export default function QueryBuilderPage({
       <div style={{ color: C.mut }} className="text-xs mt-1 mb-1">
         Add conditions to narrow down rows. Group conditions with AND/OR, or negate with NOT.
       </div>
-      <FilterBuilder where={draft.where} schema={schema} />
+      <FilterBuilder where={draft.where} schema={combinedSchema} />
     </Panel>
   );
 
@@ -281,7 +294,7 @@ export default function QueryBuilderPage({
       </div>
       <SelectBuilder
         select={draft.select}
-        schema={schema}
+        schema={combinedSchema}
         orderByField={draft.orderBy?.field ?? null}
         onAdd={item => addSelectItem(item)}
         onRemove={removeSelectItem}
@@ -295,7 +308,7 @@ export default function QueryBuilderPage({
         <div>
           <Label>Group by</Label>
           <div className="mt-1">
-            <GroupByBuilder groupBy={draft.groupBy} schema={schema} onAdd={addGroupByField} onRemove={removeGroupByField} />
+            <GroupByBuilder groupBy={draft.groupBy} schema={combinedSchema} onAdd={addGroupByField} onRemove={removeGroupByField} />
           </div>
         </div>
         <div>
@@ -403,7 +416,7 @@ export default function QueryBuilderPage({
                 }}
                 queries={[{ ...draft, id: '_preview' }]}
                 data={data}
-                schema={schema}
+                schema={combinedSchema}
                 height={260}
               />
             </div>
@@ -452,7 +465,10 @@ export default function QueryBuilderPage({
                     <button
                       onClick={() => {
                         setDraft({ ...q });
-                        try { setResult(runQuery(q, data, schema)); setValidation({ ok: true, errors: [] }); } catch { /* ignore */ }
+                        try {
+                          setResult(runQuery(q, data, schemaForJoins(q.joins)));
+                          setValidation({ ok: true, errors: [] });
+                        } catch { /* ignore */ }
                         setStep('sql');
                       }}
                       type="button"
@@ -534,8 +550,19 @@ export default function QueryBuilderPage({
                   <div className="mt-2"><KpiMetaForm kpi={draft.kpi} onChange={setKpiMeta} /></div>
                 </Panel>
                 <Panel>
-                  <Label>Join (Phase 2)</Label>
-                  <div className="mt-2"><JoinBuilder /></div>
+                  <Label>Join</Label>
+                  <div className="mt-2">
+                    <JoinBuilder
+                      sourceTable={sourceName}
+                      baseSchema={schema}
+                      joins={draft.joins}
+                      joinTables={joinTables}
+                      onAddJoin={addJoin}
+                      onRemoveJoin={removeJoin}
+                      onLoadJoinTable={loadJoinTable}
+                      onAddField={name => addSelectItem({ id: 'sel_' + Date.now(), expr: field(name), label: name })}
+                    />
+                  </div>
                 </Panel>
                 {sqlPanel}
               </>

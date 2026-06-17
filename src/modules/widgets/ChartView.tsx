@@ -5,6 +5,7 @@ import {
   LineChart, Line,
   AreaChart, Area,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  type PieLabelRenderProps,
 } from 'recharts';
 import { runQuery } from '@/modules/queries/engine';
 import type { FieldSchema } from '@/modules/queries/schema';
@@ -99,7 +100,7 @@ export default function ChartView({
             cx="50%"
             cy="50%"
             outerRadius={Math.min(height / 2 - 10, 90)}
-            label={(e: any) => e[dim]}
+            label={(e: PieLabelRenderProps) => String(e.name ?? '')}
           >
             {rows.map((r, i) => <Cell key={i} fill={colorFor(String(r[dim]), i)} />)}
           </Pie>

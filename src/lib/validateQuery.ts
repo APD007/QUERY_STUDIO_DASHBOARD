@@ -130,7 +130,7 @@ export function validateQuery(query: Query, schema: FieldSchema[]): ValidationRe
   }
   query.where.children.forEach(checkWhereNode);
 
-  /* ---- JOINS (Phase 2 scaffold — validated for when JoinBuilder ships) ---- */
+  /* ---- JOINS ---- */
   query.joins.forEach(j => {
     if (!j.rightTable) errors.push({ message: 'A join is missing its right-hand table.' });
     if (!j.leftKey || !j.rightKey) errors.push({ message: 'A join is missing its ON keys.' });

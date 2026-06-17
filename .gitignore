@@ -17,6 +17,7 @@ server-out.txt
 server-err.txt
 server/uploads/*
 !server/uploads/.gitkeep
+server/data/
 
 # stray debug logs / build cache
 dev-out.txt

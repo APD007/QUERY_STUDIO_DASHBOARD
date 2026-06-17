@@ -26,4 +26,5 @@ function Badge({ className, variant, ...props }: BadgeProps) {
   return <span className={cn(badgeVariants({ variant }), className)} {...props} />;
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- shadcn/ui pattern: variants are meant to be reused by callers
 export { Badge, badgeVariants };

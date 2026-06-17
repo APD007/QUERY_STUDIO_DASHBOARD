@@ -9,16 +9,57 @@ export interface DbConnection {
   password?: string;
 }
 
-async function postJson<T>(url: string, body: unknown): Promise<T> {
+class ApiError extends Error {
+  status: number;
+  constructor(message: string, status: number) {
+    super(message);
+    this.status = status;
+  }
+}
+
+async function request<T>(method: string, url: string, body?: unknown): Promise<T> {
   const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    method,
+    headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || `Request to ${url} failed (${res.status})`);
+  const data = res.status === 204 ? null : await res.json().catch(() => null);
+  if (!res.ok) throw new ApiError((data && data.error) || `${method} ${url} failed (${res.status})`, res.status);
   return data as T;
 }
+
+const postJson = <T,>(url: string, body: unknown) => request<T>('POST', url, body);
+
+export { ApiError };
+
+/* ============================================================ Auth ============================================================ */
+
+export interface AuthUser {
+  id: string;
+  email: string;
+}
+
+export const authApi = {
+  register: (email: string, password: string) => request<AuthUser>('POST', '/api/auth/register', { email, password }),
+  login: (email: string, password: string) => request<AuthUser>('POST', '/api/auth/login', { email, password }),
+  logout: () => request<{ ok: boolean }>('POST', '/api/auth/logout'),
+  me: () => request<AuthUser>('GET', '/api/auth/me'),
+};
+
+/* ============================================================ Generic persisted collections ============================================================ */
+
+export function makeCollectionApi<T extends { id: string | null }>(resource: string) {
+  return {
+    list: () => request<{ items: T[] }>('GET', `/api/${resource}`).then(r => r.items),
+    upsert: (item: T) =>
+      item.id
+        ? request<{ id: string }>('PUT', `/api/${resource}/${item.id}`, item).then(r => r.id)
+        : request<{ id: string }>('POST', `/api/${resource}`, item).then(r => r.id),
+    remove: (id: string) => request<{ ok: boolean }>('DELETE', `/api/${resource}/${id}`).then(() => {}),
+  };
+}
+
+/* ============================================================ Data sources ============================================================ */
 
 export async function uploadSqliteFile(file: File): Promise<string> {
   const form = new FormData();

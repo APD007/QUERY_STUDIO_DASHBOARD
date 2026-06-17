@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react';
-import * as XLSX from 'xlsx';
 import Papa from 'papaparse';
 import {
   Database, Upload, FileSpreadsheet, FileJson, Globe, Server, Check, X,
@@ -40,8 +39,8 @@ interface HistoryEntry {
 const DB_TYPES: { value: DbType; label: string; wired: boolean }[] = [
   { value: 'sqlite', label: 'SQLite', wired: true },
   { value: 'postgres', label: 'PostgreSQL', wired: true },
-  { value: 'mysql', label: 'MySQL', wired: false },
-  { value: 'mssql', label: 'SQL Server', wired: false },
+  { value: 'mysql', label: 'MySQL', wired: true },
+  { value: 'mssql', label: 'SQL Server', wired: true },
   { value: 'oracle', label: 'Oracle', wired: false },
 ];
 
@@ -186,8 +185,9 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
   const handleExcelFiles = (files: FileList | File[]) => {
     Array.from(files).forEach(f => {
       const reader = new FileReader();
-      reader.onload = e => {
+      reader.onload = async e => {
         const buf = e.target?.result;
+        const XLSX = await import('xlsx');
         const wb = XLSX.read(buf, { type: 'array' });
         const sheet = wb.Sheets[wb.SheetNames[0]];
         const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[];
@@ -441,7 +441,7 @@ function DatabaseSection({ onActivate }: { onActivate: (name: string, rows: Reco
         {!wired && (
           <div className="flex items-end">
             <span style={{ color: '#b45309', background: '#fffbeb' }} className="text-xs rounded-lg px-2.5 py-1.5">
-              {DB_TYPES.find(d => d.value === type)?.label} isn't wired up yet — only SQLite and PostgreSQL run for real in this build.
+              {DB_TYPES.find(d => d.value === type)?.label} isn't wired up — it needs Oracle's proprietary Instant Client native libraries, which we can't bundle. SQLite, PostgreSQL, MySQL and SQL Server all connect for real.
             </span>
           </div>
         )}

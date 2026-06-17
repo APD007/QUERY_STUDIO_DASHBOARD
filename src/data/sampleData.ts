@@ -57,3 +57,19 @@ export function makeSampleData(): AlarmRow[] {
   }
   return rows;
 }
+
+export interface VendorRow {
+  [key: string]: unknown;
+  vendor: string;
+  region: string;
+  support_tier: string;
+}
+
+/** A small bundled dimension table, joinable on fact_alarms.vendor — gives the Join Builder something real to demo out of the box. */
+export function makeDimVendorData(): VendorRow[] {
+  return [
+    { vendor: 'Nokia',    region: 'EMEA', support_tier: 'Gold' },
+    { vendor: 'Ericsson', region: 'EMEA', support_tier: 'Platinum' },
+    { vendor: 'Cisco',    region: 'AMER', support_tier: 'Gold' },
+  ];
+}

@@ -20,6 +20,10 @@ function NodeView({ node, schema }: { node: ExprNode; schema: FieldSchema[] }) {
   const replaceConditionNode = useQueryDraftStore(s => s.replaceConditionNode);
   const removeConditionNode  = useQueryDraftStore(s => s.removeConditionNode);
   const unwrapNodeFromNot    = useQueryDraftStore(s => s.unwrapNodeFromNot);
+  // Hooks must run unconditionally regardless of node.kind; only the 'not' branch below
+  // actually attaches wrapDrop's ref/state, so the id only needs to be unique when it does.
+  const dropId = 'id' in node ? node.id : 'n/a';
+  const wrapDrop = useDroppable({ id: `cond-wrap:${dropId}`, data: { zone: 'cond-wrap', condId: dropId } });
 
   if (node.kind === 'compare' || node.kind === 'between' || node.kind === 'in' || node.kind === 'like') {
     return (
@@ -33,7 +37,6 @@ function NodeView({ node, schema }: { node: ExprNode; schema: FieldSchema[] }) {
   }
 
   if (node.kind === 'not') {
-    const wrapDrop = useDroppable({ id: `cond-wrap:${node.id}`, data: { zone: 'cond-wrap', condId: node.id } });
     return (
       <div
         ref={wrapDrop.setNodeRef}
@@ -109,7 +112,9 @@ export default function GroupView({ group, schema, isRoot = false, onRemoveSelf 
         ref={addDrop.setNodeRef}
         className={cn('space-y-2 rounded-lg', addDrop.isOver && 'bg-[#EAF3FB] p-1')}
       >
-        {group.children.map(child => <NodeView key={('id' in child ? child.id : undefined) ?? Math.random()} node={child} schema={schema} />)}
+        {group.children.map((child, i) => (
+          <NodeView key={('id' in child ? child.id : undefined) ?? `idx-${i}`} node={child} schema={schema} />
+        ))}
       </div>
 
       <div className="flex gap-2 mt-2">

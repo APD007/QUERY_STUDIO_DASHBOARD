@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import type {
-  AggFn, ExprNode, KpiMeta, LogicalOp, OrderBySpec, Query, SelectItem,
+  AggFn, ExprNode, JoinSpec, KpiMeta, LogicalOp, OrderBySpec, Query, SelectItem,
 } from '@/types/expr';
 import { emptyKpiMeta, emptyLogicalGroup } from '@/types/expr';
 import type { FieldSchema } from '@/modules/queries/schema';
@@ -79,9 +79,12 @@ interface QueryDraftState {
   setConditionOp(condId: string, op: RowOp): void;
   wrapSelectItemInAgg(itemId: string, fn: AggFn): void;
   setOrderByToItemLabel(label: string): void;
+
+  addJoin(join: JoinSpec): void;
+  removeJoin(id: string): void;
 }
 
-export const useQueryDraftStore = create<QueryDraftState>((set, get) => ({
+export const useQueryDraftStore = create<QueryDraftState>(set => ({
   draft: createDefaultQuery('fact_alarms', []),
 
   setDraft(q) { set({ draft: q }); },
@@ -181,6 +184,13 @@ export const useQueryDraftStore = create<QueryDraftState>((set, get) => ({
   },
   setOrderByToItemLabel(label) {
     set(s => ({ draft: { ...s.draft, orderBy: { field: label, dir: s.draft.orderBy?.dir ?? 'desc' } } }));
+  },
+
+  addJoin(join) {
+    set(s => ({ draft: { ...s.draft, joins: [...s.draft.joins, join] } }));
+  },
+  removeJoin(id) {
+    set(s => ({ draft: { ...s.draft, joins: s.draft.joins.filter(j => j.id !== id) } }));
   },
 }));
 

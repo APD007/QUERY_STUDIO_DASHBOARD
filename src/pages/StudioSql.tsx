@@ -1,9 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Editor, { type OnMount, type BeforeMount } from '@monaco-editor/react';
 import { format as formatSql } from 'sql-formatter';
 import {
   Play, Save, Eraser, Copy, Wand2, Check, AlertCircle, Clock, Rows3,
-  PieChart as PieIcon, BarChart3, Activity, AreaChart as AreaIcon, Hash, Table2,
+  PieChart as PieIcon, BarChart3, Activity, AreaChart as AreaIcon, Hash, Table2, Sliders,
 } from 'lucide-react';
 
 import Panel from '@/components/Panel';
@@ -18,6 +18,8 @@ import { useQueryStore } from '@/modules/queries/store';
 import { useWidgetStore } from '@/modules/widgets/store';
 import { useDataStore } from '@/store/dataStore';
 import { useSqlEditorStore } from '@/store/sqlEditorStore';
+import { useQueryDraftStore } from '@/store/queryDraftStore';
+import { parseSqlToQuery } from '@/lib/sqlParser';
 import { emptyKpiMeta, emptyLogicalGroup, type Query } from '@/types/expr';
 import type { ChartType } from '@/types/widget';
 import { C, SEV } from '@/palette';
@@ -31,16 +33,23 @@ const CHART_PICKS: [ChartType, string, typeof PieIcon][] = [
   ['area',  'Area',  AreaIcon],
 ];
 
-export default function StudioSql({ onGoToDashboard }: { onGoToDashboard: () => void }) {
+export default function StudioSql({
+  onGoToDashboard, onGoToBuilder,
+}: {
+  onGoToDashboard: () => void;
+  onGoToBuilder: () => void;
+}) {
   const { data, schema, sourceName } = useDataStore();
   const { queries, saveQuery } = useQueryStore();
   const { addWidget } = useWidgetStore();
   const sql = useSqlEditorStore(s => s.sql);
   const setSql = useSqlEditorStore(s => s.setSql);
+  const setDraft = useQueryDraftStore(s => s.setDraft);
 
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [execMs, setExecMs] = useState<number | null>(null);
+  const [builderError, setBuilderError] = useState<string | null>(null);
   const [queryName, setQueryName] = useState('untitled_query');
   const [previewChart, setPreviewChart] = useState<ChartType>('table');
   const [widgetForm, setWidgetForm] = useState<WidgetFormState | null>(null);
@@ -76,7 +85,7 @@ export default function StudioSql({ onGoToDashboard }: { onGoToDashboard: () => 
       setExecMs(performance.now() - started);
     }
   };
-  runRef.current = run;
+  useEffect(() => { runRef.current = run; });
 
   const doSave = () => {
     const id = saveQuery(buildSqlQuery());
@@ -115,6 +124,17 @@ export default function StudioSql({ onGoToDashboard }: { onGoToDashboard: () => 
 
   const handleCopy = () => { void navigator.clipboard.writeText(sql); };
   const handleClear = () => setSql('');
+
+  const handleLoadIntoBuilder = () => {
+    const parsed = parseSqlToQuery(sql, sourceName);
+    if (!parsed.ok) {
+      setBuilderError(parsed.error);
+      return;
+    }
+    setBuilderError(null);
+    setDraft({ ...parsed.query, name: queryName });
+    onGoToBuilder();
+  };
 
   const beforeMount: BeforeMount = monaco => {
     // Avoid duplicate registrations across Studio remounts (tab switches).
@@ -211,8 +231,14 @@ export default function StudioSql({ onGoToDashboard }: { onGoToDashboard: () => 
           <Button variant="ghost" onClick={handleCopy}><Copy size={14} /> Copy</Button>
           <Button variant="ghost" onClick={handleClear}><Eraser size={14} /> Clear</Button>
           <Button onClick={openWidgetForm}><PieIcon size={14} /> Create widget</Button>
+          <Button variant="ghost" onClick={handleLoadIntoBuilder}><Sliders size={14} /> Load into Builder</Button>
           <span style={{ color: C.mut }} className="text-xs ml-auto">Ctrl/Cmd + Enter to run</span>
         </div>
+        {builderError && (
+          <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8 }} className="text-xs p-2.5 mt-2">
+            {builderError}
+          </div>
+        )}
       </Panel>
 
       {(result || error) && (
