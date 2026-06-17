@@ -1,0 +1,29 @@
+@import "tailwindcss";
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: ui-sans-serif, system-ui, -apple-system, Arial, sans-serif;
+  background: #F4F7FA;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* react-grid-layout overrides */
+.react-grid-layout { position: relative; }
+.react-grid-item { transition: all 180ms ease; transition-property: left, top, width, height; }
+.react-grid-item.react-grid-placeholder {
+  background: #2E75B6;
+  opacity: 0.12;
+  border-radius: 12px;
+  z-index: 2;
+}
+.react-resizable-handle {
+  opacity: 0.35;
+}
+.react-resizable-handle:hover {
+  opacity: 1;
+}
