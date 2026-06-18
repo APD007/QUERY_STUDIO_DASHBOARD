@@ -155,11 +155,15 @@ if (fs.existsSync(distDir)) {
 }
 
 // Catches errors forwarded via next(err) from async route handlers (e.g. a
-// transient DB error) so the client gets a clean 500 instead of a hung request.
+// transient DB error) so the client gets a clean response instead of a hung request.
+// Surfaces err.message (never the stack trace) — a blanket "Internal server error"
+// made every failure indistinguishable from the client, including ones with a
+// perfectly clear cause (payload too large, a Postgres constraint, bad encoding).
 app.use((err, req, res, next) => {
   console.error(err);
   if (res.headersSent) return next(err);
-  res.status(500).json({ error: 'Internal server error' });
+  const status = err.status || err.statusCode || 500;
+  res.status(status).json({ error: err.message || 'Internal server error' });
 });
 
 const PORT = process.env.PORT || 5174;
