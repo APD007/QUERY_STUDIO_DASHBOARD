@@ -14,6 +14,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem as Select
 
 import { useDataStore } from '@/store/dataStore';
 import { useDatasetStore } from '@/modules/datasets/store';
+import { useUploadStore } from '@/modules/uploads/store';
 import { buildSchema, type FieldSchema } from '@/modules/queries/schema';
 import { sanitizeTableName } from '@/lib/tableName';
 import { coerceToRows } from '@/lib/flatten';
@@ -157,7 +158,7 @@ export default function DataSourcesPage() {
       </Panel>
 
       {section === 'demo' && <DemoSection onActivate={activate} />}
-      {section === 'files' && <FilesSection onPersist={persistAndActivate} />}
+      {section === 'files' && <FilesSection />}
       {section === 'rest' && <RestSection onPersist={persistAndActivate} />}
       {section === 'database' && <DatabaseSection onPersist={persistAndActivate} />}
 
@@ -319,63 +320,17 @@ function DemoSection({ onActivate }: { onActivate: (name: string, rows: Record<s
 
 /* ============================================================ Files ============================================================ */
 
-interface UploadedFile {
-  name: string;
-  sourceType: DatasetSourceType;
-  status: 'uploading' | 'ready' | 'saving' | 'saved' | 'error';
-  progress: number;
-  rows: Record<string, unknown>[];
-  schema: FieldSchema[];
-  message?: string;
-}
-
-function FilesSection({
-  onPersist,
-}: {
-  onPersist: (name: string, sourceType: DatasetSourceType, rows: Record<string, unknown>[]) => Promise<void>;
-}) {
+function FilesSection() {
   const [dragOver, setDragOver] = useState(false);
-  const [files, setFiles] = useState<UploadedFile[]>([]);
+  const uploads = useUploadStore(s => s.uploads);
+  const startFile = useUploadStore(s => s.startFile);
+  const setProgress = useUploadStore(s => s.setProgress);
+  const finishFile = useUploadStore(s => s.finishFile);
+  const failFile = useUploadStore(s => s.failFile);
+  const dismiss = useUploadStore(s => s.dismiss);
   const csvRef = useRef<HTMLInputElement>(null);
   const excelRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
-
-  const startFile = (name: string, sourceType: DatasetSourceType) => {
-    setFiles(prev => [
-      { name, sourceType, status: 'uploading', progress: 0, rows: [], schema: [] },
-      ...prev.filter(x => x.name !== name),
-    ]);
-  };
-
-  const setProgress = (name: string, progress: number) => {
-    setFiles(prev => prev.map(f => (f.name === name ? { ...f, progress } : f)));
-  };
-
-  const finishFile = (name: string, rows: Record<string, unknown>[]) => {
-    if (!rows.length) {
-      setFiles(prev => prev.map(f => (f.name === name
-        ? { ...f, status: 'error', progress: 100, message: 'No rows found — check the file has a header row and at least one data row.' }
-        : f)));
-      return;
-    }
-    setFiles(prev => prev.map(f => (f.name === name
-      ? { ...f, status: 'ready', progress: 100, rows, schema: buildSchema(rows) }
-      : f)));
-  };
-
-  const failFile = (name: string, message: string) => {
-    setFiles(prev => prev.map(f => (f.name === name ? { ...f, status: 'error', progress: 100, message } : f)));
-  };
-
-  const handleUseDataset = async (f: UploadedFile) => {
-    setFiles(prev => prev.map(x => (x.name === f.name ? { ...x, status: 'saving' } : x)));
-    try {
-      await onPersist(f.name, f.sourceType, f.rows);
-      setFiles(prev => prev.map(x => (x.name === f.name ? { ...x, status: 'saved' } : x)));
-    } catch (err) {
-      setFiles(prev => prev.map(x => (x.name === f.name ? { ...x, status: 'error', message: (err as Error).message } : x)));
-    }
-  };
 
   const handleCsvFiles = (fileList: FileList | File[]) => {
     Array.from(fileList).forEach(f => {
@@ -396,7 +351,7 @@ function FilesSection({
                 failFile(f.name, res.errors[0].message);
                 return;
               }
-              finishFile(f.name, res.data as Record<string, unknown>[]);
+              finishFile(f.name, 'csv', res.data as Record<string, unknown>[]);
             },
             error: (err: Error) => failFile(f.name, err.message),
           });
@@ -423,7 +378,7 @@ function FilesSection({
           const wb = XLSX.read(buf, { type: 'array' });
           const sheet = wb.Sheets[wb.SheetNames[0]];
           const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[];
-          finishFile(f.name, rows);
+          finishFile(f.name, 'excel', rows);
         } catch (err) {
           failFile(f.name, (err as Error).message);
         }
@@ -443,7 +398,7 @@ function FilesSection({
       reader.onload = e => {
         try {
           const parsed = JSON.parse(String(e.target?.result));
-          finishFile(f.name, coerceToRows(parsed));
+          finishFile(f.name, 'json', coerceToRows(parsed));
         } catch {
           failFile(f.name, 'Could not parse this file as JSON.');
         }
@@ -494,10 +449,13 @@ function FilesSection({
           onChange={e => { if (e.target.files) handleJsonFiles(e.target.files); e.target.value = ''; }} />
       </div>
 
-      {files.length > 0 && (
+      {uploads.length > 0 && (
         <div className="mt-3 space-y-2">
-          <Label className="flex items-center gap-1.5"><Upload size={13} /> Uploaded files (this session)</Label>
-          {files.map(f => (
+          <Label className="flex items-center gap-1.5"><Upload size={13} /> Uploads</Label>
+          <div style={{ color: C.mut }} className="text-xs -mt-1">
+            Files save automatically as soon as they finish parsing — this keeps running even if you switch tabs.
+          </div>
+          {uploads.map(f => (
             <div key={f.name} style={{ border: `1px solid ${f.status === 'error' ? '#fecaca' : C.line}`, borderRadius: 10 }} className="p-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="min-w-0">
@@ -505,24 +463,21 @@ function FilesSection({
                   {f.status === 'uploading' && (
                     <span style={{ color: C.mut }} className="text-xs ml-2">Uploading… {f.progress}%</span>
                   )}
-                  {(f.status === 'ready' || f.status === 'saving' || f.status === 'saved') && (
-                    <span style={{ color: C.mut }} className="text-xs ml-2">{f.rows.length.toLocaleString()} rows · {f.schema.length} columns</span>
+                  {(f.status === 'saving' || f.status === 'saved') && (
+                    <span style={{ color: C.mut }} className="text-xs ml-2">{f.rowCount.toLocaleString()} rows · {f.columnCount} columns</span>
                   )}
                   {f.status === 'error' && (
                     <span style={{ color: '#dc2626' }} className="text-xs ml-2">{f.message}</span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {f.status === 'ready' && (
-                    <Button size="sm" onClick={() => handleUseDataset(f)}><Check size={13} /> Use this dataset</Button>
-                  )}
                   {f.status === 'saving' && (
-                    <Button size="sm" disabled><Loader2 size={13} className="animate-spin" /> Saving…</Button>
+                    <span style={{ color: C.mut }} className="text-xs inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Saving…</span>
                   )}
                   {f.status === 'saved' && (
                     <span style={{ color: '#16a34a' }} className="text-xs inline-flex items-center gap-1"><Check size={13} /> Saved &amp; active</span>
                   )}
-                  <button type="button" onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))}>
+                  <button type="button" onClick={() => dismiss(f.name)}>
                     <X size={14} style={{ color: C.mut }} />
                   </button>
                 </div>
@@ -532,15 +487,6 @@ function FilesSection({
                   <div
                     style={{ width: `${f.progress}%`, background: C.blue, height: '100%', transition: 'width 0.15s ease' }}
                   />
-                </div>
-              )}
-              {(f.status === 'ready' || f.status === 'saving' || f.status === 'saved') && f.schema.length > 0 && (
-                <div className="flex flex-wrap gap-1.5 mt-2">
-                  {f.schema.map(s => (
-                    <span key={s.name} style={{ background: C.page, color: C.mut }} className="text-xs rounded-full px-2 py-0.5">
-                      {s.name} <span style={{ color: C.line }}>·</span> {s.type}
-                    </span>
-                  ))}
                 </div>
               )}
             </div>
