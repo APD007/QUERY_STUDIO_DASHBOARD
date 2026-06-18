@@ -4,6 +4,22 @@ import { useDataStore } from '@/store/dataStore';
 import { sanitizeTableName } from '@/lib/tableName';
 import type { FieldSchema } from '@/modules/queries/schema';
 
+// A file read with the wrong text encoding (e.g. a UTF-16 CSV decoded as UTF-8 via
+// FileReader.readAsText) comes through with a stray NUL character wedged between every
+// real character. Postgres' jsonb type rejects that character outright, turning an
+// otherwise-fine upload into a 500. Stripping it fixes that case (the real characters
+// are untouched) and guards against genuinely malformed input.
+const NUL_CHAR = String.fromCharCode(0);
+function stripNulBytes(rows: Record<string, unknown>[]): Record<string, unknown>[] {
+  return rows.map(row => {
+    const clean: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(row)) {
+      clean[key] = typeof value === 'string' ? value.split(NUL_CHAR).join('') : value;
+    }
+    return clean;
+  });
+}
+
 interface DatasetStoreState {
   datasets: DatasetMeta[];
   loaded: boolean;
@@ -54,13 +70,14 @@ export const useDatasetStore = create<DatasetStoreState>((set, get) => ({
   },
 
   async upload(name, sourceType, schema, rows) {
-    const created = await datasetsApi.upload(name, sourceType, schema, rows);
+    const cleanRows = stripNulBytes(rows);
+    const created = await datasetsApi.upload(name, sourceType, schema, cleanRows);
     set(s => ({
       datasets: [created, ...s.datasets.filter(d => d.id !== created.id)],
       hydratedIds: new Set(s.hydratedIds).add(created.id),
     }));
-    useDataStore.getState().loadDataset(rows, name);
-    useDataStore.getState().loadJoinTable(name, rows);
+    useDataStore.getState().loadDataset(cleanRows, name);
+    useDataStore.getState().loadJoinTable(name, cleanRows);
     set({ activeId: created.id });
   },
 

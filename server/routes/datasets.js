@@ -27,8 +27,19 @@ router.post('/', wrap(async (req, res) => {
   if (rows.length > MAX_ROWS) {
     return res.status(413).json({ error: `Dataset has ${rows.length.toLocaleString()} rows, which exceeds the ${MAX_ROWS.toLocaleString()} row limit.` });
   }
-  const created = await datasetsRepo.create(req.user.sub, { name, sourceType, schema, rows });
-  res.status(201).json(created);
+  try {
+    const created = await datasetsRepo.create(req.user.sub, { name, sourceType, schema, rows });
+    res.status(201).json(created);
+  } catch (err) {
+    // A file read with the wrong text encoding (e.g. UTF-16 decoded as UTF-8) can smuggle
+    // a literal NUL byte into a field value, which Postgres' jsonb type always rejects.
+    if (/unicode escape sequence|invalid byte sequence/i.test(err.message)) {
+      return res.status(400).json({
+        error: 'This file contains characters Postgres can\'t store (likely a NUL byte from a non-UTF-8 encoded file). Re-save it as UTF-8 and try again.',
+      });
+    }
+    throw err;
+  }
 }));
 
 router.patch('/:id', wrap(async (req, res) => {
