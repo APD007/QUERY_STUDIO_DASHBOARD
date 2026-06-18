@@ -33,7 +33,11 @@ function SchemaList({ fields }: { fields: FieldSchema[] }) {
   );
 }
 
-export default function DatasetSidebar({ onSelectQuery }: { onSelectQuery: (q: Query) => void }) {
+export default function DatasetSidebar({ onSelectQuery, hideDatasets, className }: {
+  onSelectQuery: (q: Query) => void;
+  hideDatasets?: boolean;
+  className?: string;
+}) {
   const sourceName = useDataStore(s => s.sourceName);
   const schema = useDataStore(s => s.schema);
   const loadDataset = useDataStore(s => s.loadDataset);
@@ -61,65 +65,67 @@ export default function DatasetSidebar({ onSelectQuery }: { onSelectQuery: (q: Q
   };
 
   return (
-    <div className="lg:w-60 shrink-0 space-y-4">
-      <Panel>
-        <Label>Datasets</Label>
-        <div className="mt-1.5 space-y-0.5">
-          <div style={{ color: C.mut }} className="text-[11px] font-semibold uppercase tracking-wide pt-1 pb-0.5">Sample</div>
-          {(demos ?? []).map(d => {
-            const tableKey = sanitizeTableName(d.key);
-            const active = sourceName === tableKey;
-            const isOpen = !!expanded[tableKey];
-            return (
-              <div key={d.key}>
-                <div className="flex items-center gap-0.5">
-                  <button type="button" onClick={() => toggle(tableKey)} className="shrink-0 p-0.5">
-                    {isOpen ? <ChevronDown size={12} style={{ color: C.mut }} /> : <ChevronRight size={12} style={{ color: C.mut }} />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => loadDataset(d.make(), d.key)}
-                    style={active ? { background: C.skyl, color: C.blue } : { color: C.ink }}
-                    className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-sm font-medium rounded-lg px-2 py-1.5 truncate"
-                  >
-                    <Database size={13} style={{ color: active ? C.blue : C.mut }} /> {d.label}
-                  </button>
-                </div>
-                {isOpen && <SchemaList fields={fieldsFor(tableKey, active)} />}
-              </div>
-            );
-          })}
-
-          {datasets.length > 0 && (
-            <>
-              <div style={{ color: C.mut }} className="text-[11px] font-semibold uppercase tracking-wide pt-2 pb-0.5">Uploaded</div>
-              {datasets.map(d => {
-                const tableKey = sanitizeTableName(d.name);
-                const active = sourceName === tableKey;
-                const isOpen = !!expanded[tableKey];
-                return (
-                  <div key={d.id}>
-                    <div className="flex items-center gap-0.5">
-                      <button type="button" onClick={() => toggle(tableKey)} className="shrink-0 p-0.5">
-                        {isOpen ? <ChevronDown size={12} style={{ color: C.mut }} /> : <ChevronRight size={12} style={{ color: C.mut }} />}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => activateDataset(d.id)}
-                        style={active ? { background: C.skyl, color: C.blue } : { color: C.ink }}
-                        className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-sm font-medium rounded-lg px-2 py-1.5 truncate"
-                      >
-                        <FileSpreadsheet size={13} style={{ color: active ? C.blue : C.mut }} /> {d.name}
-                      </button>
-                    </div>
-                    {isOpen && <SchemaList fields={fieldsFor(tableKey, active)} />}
+    <div className={className ?? 'lg:w-60 shrink-0 space-y-4'}>
+      {!hideDatasets && (
+        <Panel>
+          <Label>Datasets</Label>
+          <div className="mt-1.5 space-y-0.5">
+            <div style={{ color: C.mut }} className="text-[11px] font-semibold uppercase tracking-wide pt-1 pb-0.5">Sample</div>
+            {(demos ?? []).map(d => {
+              const tableKey = sanitizeTableName(d.key);
+              const active = sourceName === tableKey;
+              const isOpen = !!expanded[tableKey];
+              return (
+                <div key={d.key}>
+                  <div className="flex items-center gap-0.5">
+                    <button type="button" onClick={() => toggle(tableKey)} className="shrink-0 p-0.5">
+                      {isOpen ? <ChevronDown size={12} style={{ color: C.mut }} /> : <ChevronRight size={12} style={{ color: C.mut }} />}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadDataset(d.make(), d.key)}
+                      style={active ? { background: C.skyl, color: C.blue } : { color: C.ink }}
+                      className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-sm font-medium rounded-lg px-2 py-1.5 truncate"
+                    >
+                      <Database size={13} style={{ color: active ? C.blue : C.mut }} /> {d.label}
+                    </button>
                   </div>
-                );
-              })}
-            </>
-          )}
-        </div>
-      </Panel>
+                  {isOpen && <SchemaList fields={fieldsFor(tableKey, active)} />}
+                </div>
+              );
+            })}
+
+            {datasets.length > 0 && (
+              <>
+                <div style={{ color: C.mut }} className="text-[11px] font-semibold uppercase tracking-wide pt-2 pb-0.5">Uploaded</div>
+                {datasets.map(d => {
+                  const tableKey = sanitizeTableName(d.name);
+                  const active = sourceName === tableKey;
+                  const isOpen = !!expanded[tableKey];
+                  return (
+                    <div key={d.id}>
+                      <div className="flex items-center gap-0.5">
+                        <button type="button" onClick={() => toggle(tableKey)} className="shrink-0 p-0.5">
+                          {isOpen ? <ChevronDown size={12} style={{ color: C.mut }} /> : <ChevronRight size={12} style={{ color: C.mut }} />}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => activateDataset(d.id)}
+                          style={active ? { background: C.skyl, color: C.blue } : { color: C.ink }}
+                          className="flex-1 min-w-0 flex items-center gap-1.5 text-left text-sm font-medium rounded-lg px-2 py-1.5 truncate"
+                        >
+                          <FileSpreadsheet size={13} style={{ color: active ? C.blue : C.mut }} /> {d.name}
+                        </button>
+                      </div>
+                      {isOpen && <SchemaList fields={fieldsFor(tableKey, active)} />}
+                    </div>
+                  );
+                })}
+              </>
+            )}
+          </div>
+        </Panel>
+      )}
 
       <Panel>
         <Label>Saved queries</Label>

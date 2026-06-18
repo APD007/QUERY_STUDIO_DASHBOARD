@@ -416,8 +416,6 @@ export default function QueryBuilderPage({
   return (
     <DndContext onDragEnd={handleDragEnd}>
       <div className="flex flex-col lg:flex-row gap-4 p-4 mx-auto" style={{ maxWidth: 1600 }}>
-        <DatasetSidebar onSelectQuery={loadSavedQuery} />
-
         {/* ===== LEFT RAIL ===== */}
         <div className="lg:w-64 shrink-0 space-y-4">
           <Panel>
@@ -429,6 +427,7 @@ export default function QueryBuilderPage({
               />
             </div>
           </Panel>
+          <DatasetSidebar onSelectQuery={loadSavedQuery} hideDatasets className="space-y-4" />
         </div>
 
         {/* ===== MAIN ===== */}
