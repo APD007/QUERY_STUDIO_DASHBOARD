@@ -30,7 +30,13 @@ interface DatasetStoreState {
   reset(): void;
   /** Fetches full rows for every dataset not yet registered as a queryable table, so raw SQL can `FROM` any of them by name. */
   ensureAllLoaded(): Promise<void>;
-  upload(name: string, sourceType: DatasetSourceType, schema: FieldSchema[], rows: Record<string, unknown>[]): Promise<void>;
+  upload(
+    name: string,
+    sourceType: DatasetSourceType,
+    schema: FieldSchema[],
+    rows: Record<string, unknown>[],
+    onProgress?: (pct: number) => void
+  ): Promise<void>;
   activate(id: string): Promise<void>;
   rename(id: string, name: string): Promise<void>;
   remove(id: string): Promise<void>;
@@ -69,9 +75,9 @@ export const useDatasetStore = create<DatasetStoreState>((set, get) => ({
     set(s => ({ hydratedIds: new Set([...s.hydratedIds, ...loadedIds]) }));
   },
 
-  async upload(name, sourceType, schema, rows) {
+  async upload(name, sourceType, schema, rows, onProgress) {
     const cleanRows = stripNulBytes(rows);
-    const created = await datasetsApi.upload(name, sourceType, schema, cleanRows);
+    const created = await datasetsApi.upload(name, sourceType, schema, cleanRows, onProgress);
     set(s => ({
       datasets: [created, ...s.datasets.filter(d => d.id !== created.id)],
       hydratedIds: new Set(s.hydratedIds).add(created.id),

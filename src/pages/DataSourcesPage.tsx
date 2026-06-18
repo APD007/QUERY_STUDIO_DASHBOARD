@@ -476,7 +476,7 @@ function FilesSection() {
                 </div>
                 <div className="flex items-center gap-2">
                   {f.status === 'saving' && (
-                    <span style={{ color: C.mut }} className="text-xs inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Saving…</span>
+                    <span style={{ color: C.mut }} className="text-xs inline-flex items-center gap-1"><Loader2 size={13} className="animate-spin" /> Saving… {f.progress}%</span>
                   )}
                   {f.status === 'saved' && (
                     <span style={{ color: '#16a34a' }} className="text-xs inline-flex items-center gap-1"><Check size={13} /> Saved &amp; active</span>
@@ -491,7 +491,7 @@ function FilesSection() {
                   </button>
                 </div>
               </div>
-              {f.status === 'uploading' && (
+              {(f.status === 'uploading' || f.status === 'saving') && (
                 <div className="mt-2 rounded-full overflow-hidden" style={{ background: C.page, height: 6 }}>
                   <div
                     style={{ width: `${f.progress}%`, background: C.blue, height: '100%', transition: 'width 0.15s ease' }}

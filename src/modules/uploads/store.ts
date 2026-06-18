@@ -53,10 +53,10 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
     const schema: FieldSchema[] = buildSchema(rows);
     set(s => ({
       uploads: s.uploads.map(u => (u.name === name
-        ? { ...u, status: 'saving', progress: 100, rowCount: rows.length, columnCount: schema.length, rows }
+        ? { ...u, status: 'saving', progress: 0, rowCount: rows.length, columnCount: schema.length, rows }
         : u)),
     }));
-    useDatasetStore.getState().upload(name, sourceType, schema, rows)
+    useDatasetStore.getState().upload(name, sourceType, schema, rows, pct => get().setProgress(name, pct))
       .then(() => {
         set(s => ({ uploads: s.uploads.map(u => (u.name === name ? { ...u, status: 'saved' } : u)) }));
         toast.success(`"${name}" saved`);

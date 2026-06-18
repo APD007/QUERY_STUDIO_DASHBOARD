@@ -62,15 +62,33 @@ await pool.query(`
     row_count INTEGER NOT NULL,
     column_count INTEGER NOT NULL,
     schema_json JSONB NOT NULL,
-    data_json JSONB NOT NULL,
+    data_json JSONB,
+    status TEXT NOT NULL DEFAULT 'ready',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
+  );
+
+  -- Row data for a chunked upload lands here, one (small) chunk per request, instead
+  -- of one giant JSONB value built from a single multi-hundred-MB request body —
+  -- that single-blob shape is what was crashing the app on a large CSV/Excel upload.
+  CREATE TABLE IF NOT EXISTS dataset_chunks (
+    dataset_id TEXT NOT NULL REFERENCES datasets(id) ON DELETE CASCADE,
+    chunk_index INTEGER NOT NULL,
+    rows_json JSONB NOT NULL,
+    PRIMARY KEY (dataset_id, chunk_index)
   );
 
   CREATE INDEX IF NOT EXISTS idx_queries_user ON queries(user_id);
   CREATE INDEX IF NOT EXISTS idx_widgets_user ON widgets(user_id);
   CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards(user_id);
   CREATE INDEX IF NOT EXISTS idx_datasets_user ON datasets(user_id);
+`);
+
+// Pre-existing deployments created `datasets` before `status`/nullable `data_json`
+// existed — bring them up to date in place rather than requiring a manual migration.
+await pool.query(`
+  ALTER TABLE datasets ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'ready';
+  ALTER TABLE datasets ALTER COLUMN data_json DROP NOT NULL;
 `);
 
 const nowIso = () => new Date().toISOString();
@@ -165,9 +183,11 @@ async function withRetry(fn, attempts = 2, delayMs = 700) {
 
 export const datasetsRepo = {
   async list(userId) {
+    // 'pending' rows are uploads still mid-chunk — hide them until finishCreate marks
+    // them 'ready' so a half-uploaded dataset never shows up as selectable.
     const res = await pool.query(
       `SELECT id, name, source_type, row_count, column_count, created_at, updated_at
-       FROM datasets WHERE user_id = $1 ORDER BY updated_at DESC`,
+       FROM datasets WHERE user_id = $1 AND status = 'ready' ORDER BY updated_at DESC`,
       [userId]
     );
     return res.rows.map(row => ({
@@ -185,6 +205,16 @@ export const datasetsRepo = {
     const res = await withRetry(() => pool.query('SELECT * FROM datasets WHERE id = $1 AND user_id = $2', [id, userId]));
     const row = res.rows[0];
     if (!row) return null;
+    // Older datasets were written as one big data_json blob; chunked uploads leave it
+    // null and store their rows as separate (small) chunk rows instead.
+    let rows = row.data_json;
+    if (rows == null) {
+      const chunks = await withRetry(() => pool.query(
+        'SELECT rows_json FROM dataset_chunks WHERE dataset_id = $1 ORDER BY chunk_index',
+        [id]
+      ));
+      rows = chunks.rows.flatMap(c => c.rows_json);
+    }
     return {
       id: row.id,
       name: row.name,
@@ -192,22 +222,51 @@ export const datasetsRepo = {
       rowCount: row.row_count,
       columnCount: row.column_count,
       schema: row.schema_json,
-      rows: row.data_json,
+      rows,
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
   },
 
-  async create(userId, { name, sourceType, schema, rows }) {
+  async startCreate(userId, { name, sourceType, schema }) {
     const id = newId('ds');
     const now = nowIso();
+    await pool.query(
+      `INSERT INTO datasets (id, user_id, name, source_type, row_count, column_count, schema_json, data_json, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, 0, $5, $6, NULL, 'pending', $7, $7)`,
+      [id, userId, name, sourceType, schema.length, JSON.stringify(schema), now]
+    );
+    return { id };
+  },
+
+  async appendChunk(id, userId, chunkIndex, rows) {
+    const owns = await pool.query('SELECT 1 FROM datasets WHERE id = $1 AND user_id = $2', [id, userId]);
+    if (!owns.rows[0]) throw new Error('Dataset not found');
+    // ON CONFLICT makes a retried chunk request safe to resend rather than duplicating rows.
     await withRetry(() => pool.query(
-      `INSERT INTO datasets (id, user_id, name, source_type, row_count, column_count, schema_json, data_json, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
-      [id, userId, name, sourceType, rows.length, schema.length, JSON.stringify(schema), JSON.stringify(rows), now]
+      `INSERT INTO dataset_chunks (dataset_id, chunk_index, rows_json) VALUES ($1, $2, $3)
+       ON CONFLICT (dataset_id, chunk_index) DO UPDATE SET rows_json = EXCLUDED.rows_json`,
+      [id, chunkIndex, JSON.stringify(rows)]
     ));
+  },
+
+  async finishCreate(id, userId) {
+    const owns = await pool.query('SELECT name, source_type, column_count, created_at FROM datasets WHERE id = $1 AND user_id = $2', [id, userId]);
+    const ds = owns.rows[0];
+    if (!ds) throw new Error('Dataset not found');
+    const countRes = await pool.query(
+      `SELECT COALESCE(SUM(jsonb_array_length(rows_json)), 0) AS n FROM dataset_chunks WHERE dataset_id = $1`,
+      [id]
+    );
+    const rowCount = Number(countRes.rows[0].n);
+    const now = nowIso();
+    await pool.query(
+      `UPDATE datasets SET row_count = $1, status = 'ready', updated_at = $2 WHERE id = $3 AND user_id = $4`,
+      [rowCount, now, id, userId]
+    );
     return {
-      id, name, sourceType, rowCount: rows.length, columnCount: schema.length, createdAt: now, updatedAt: now,
+      id, name: ds.name, sourceType: ds.source_type, rowCount, columnCount: ds.column_count,
+      createdAt: ds.created_at, updatedAt: now,
     };
   },
 

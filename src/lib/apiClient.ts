@@ -123,11 +123,48 @@ export interface DatasetFull extends DatasetMeta {
   rows: Record<string, unknown>[];
 }
 
+// Target size per chunk request, not a row count — column-heavy datasets would
+// otherwise produce chunks of wildly different byte sizes for the same row count.
+const CHUNK_TARGET_BYTES = 3 * 1024 * 1024;
+
+function chunkRows(rows: Record<string, unknown>[]): Record<string, unknown>[][] {
+  const chunks: Record<string, unknown>[][] = [];
+  let current: Record<string, unknown>[] = [];
+  let currentBytes = 0;
+  for (const row of rows) {
+    const size = JSON.stringify(row).length;
+    if (current.length > 0 && currentBytes + size > CHUNK_TARGET_BYTES) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(row);
+    currentBytes += size;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
 export const datasetsApi = {
   list: () => request<{ items: DatasetMeta[] }>('GET', '/api/datasets').then(r => r.items),
   get: (id: string) => request<DatasetFull>('GET', `/api/datasets/${id}`),
-  upload: (name: string, sourceType: DatasetSourceType, schema: { name: string; type: string }[], rows: Record<string, unknown>[]) =>
-    request<DatasetMeta>('POST', '/api/datasets', { name, sourceType, schema, rows }),
+  // Uploaded as a start + many small chunks + a finish instead of one request carrying
+  // every row — a single giant body was what crashed the app on hosted free-tier RAM.
+  async upload(
+    name: string,
+    sourceType: DatasetSourceType,
+    schema: { name: string; type: string }[],
+    rows: Record<string, unknown>[],
+    onProgress?: (pct: number) => void
+  ): Promise<DatasetMeta> {
+    const { id } = await postJson<{ id: string }>('/api/datasets/start', { name, sourceType, schema });
+    const chunks = chunkRows(rows);
+    for (let i = 0; i < chunks.length; i++) {
+      await postJson(`/api/datasets/${id}/chunk`, { index: i, rows: chunks[i] });
+      onProgress?.(Math.round(((i + 1) / chunks.length) * 100));
+    }
+    return postJson<DatasetMeta>(`/api/datasets/${id}/finish`, {});
+  },
   rename: (id: string, name: string) => request<{ ok: boolean }>('PATCH', `/api/datasets/${id}`, { name }).then(() => {}),
   remove: (id: string) => request<{ ok: boolean }>('DELETE', `/api/datasets/${id}`).then(() => {}),
 };

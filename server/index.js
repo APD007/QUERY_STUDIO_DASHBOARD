@@ -27,11 +27,12 @@ app.set('trust proxy', 1);
 // Same-origin in production (frontend is served by this same process); permissive in dev
 // where Vite runs on a different port.
 app.use(cors(process.env.NODE_ENV === 'production' ? {} : { origin: true, credentials: true }));
-// Dataset uploads are JSON-encoded rows, capped server-side at 200k rows (see
-// MAX_ROWS in routes/datasets.js) — a wide dataset near that cap routinely produces
-// a body well over 40mb thanks to per-row key-name overhead, so the limit here has
-// to track that cap rather than an arbitrary smaller number.
-app.use(express.json({ limit: '150mb' }));
+// Dataset uploads are sent as small chunks (see routes/datasets.js + the client-side
+// chunking in apiClient.ts) specifically so no single request body needs to be huge —
+// a giant single-shot body was what crashed the app on a hosted free-tier RAM limit.
+// 15mb is generous headroom above any one chunk; it's also a backstop against ever
+// regressing back into that single-giant-request shape.
+app.use(express.json({ limit: '15mb' }));
 app.use(cookieParser());
 
 const upload = multer({ dest: uploadsDir, limits: { fileSize: 25 * 1024 * 1024 } }); // 25MB cap

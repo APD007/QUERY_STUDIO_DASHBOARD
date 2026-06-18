@@ -19,18 +19,29 @@ router.get('/:id', wrap(async (req, res) => {
   res.json(dataset);
 }));
 
-router.post('/', wrap(async (req, res) => {
-  const { name, sourceType, schema, rows } = req.body || {};
-  if (!name || !sourceType || !Array.isArray(schema) || !Array.isArray(rows)) {
-    return res.status(400).json({ error: 'name, sourceType, schema[] and rows[] are required' });
+// Uploads happen in three steps instead of one giant request body: a huge single
+// POST (one CSV's worth of rows as a single JSON blob) is what was crashing the app
+// on hosted free-tier RAM. Splitting it into a start + many small chunks + a finish
+// means no single request ever has to hold more than one chunk's worth of rows.
+router.post('/start', wrap(async (req, res) => {
+  const { name, sourceType, schema } = req.body || {};
+  if (!name || !sourceType || !Array.isArray(schema)) {
+    return res.status(400).json({ error: 'name, sourceType and schema[] are required' });
   }
-  if (rows.length > MAX_ROWS) {
-    return res.status(413).json({ error: `Dataset has ${rows.length.toLocaleString()} rows, which exceeds the ${MAX_ROWS.toLocaleString()} row limit.` });
+  const created = await datasetsRepo.startCreate(req.user.sub, { name, sourceType, schema });
+  res.status(201).json(created);
+}));
+
+router.post('/:id/chunk', wrap(async (req, res) => {
+  const { index, rows } = req.body || {};
+  if (typeof index !== 'number' || !Array.isArray(rows)) {
+    return res.status(400).json({ error: 'index (number) and rows[] are required' });
   }
   try {
-    const created = await datasetsRepo.create(req.user.sub, { name, sourceType, schema, rows });
-    res.status(201).json(created);
+    await datasetsRepo.appendChunk(req.params.id, req.user.sub, index, rows);
+    res.json({ ok: true });
   } catch (err) {
+    if (err.message === 'Dataset not found') return res.status(404).json({ error: err.message });
     // A file read with the wrong text encoding (e.g. UTF-16 decoded as UTF-8) can smuggle
     // a literal NUL byte into a field value, which Postgres' jsonb type always rejects.
     if (/unicode escape sequence|invalid byte sequence/i.test(err.message)) {
@@ -38,6 +49,20 @@ router.post('/', wrap(async (req, res) => {
         error: 'This file contains characters Postgres can\'t store (likely a NUL byte from a non-UTF-8 encoded file). Re-save it as UTF-8 and try again.',
       });
     }
+    throw err;
+  }
+}));
+
+router.post('/:id/finish', wrap(async (req, res) => {
+  try {
+    const created = await datasetsRepo.finishCreate(req.params.id, req.user.sub);
+    if (created.rowCount > MAX_ROWS) {
+      await datasetsRepo.remove(req.params.id, req.user.sub);
+      return res.status(413).json({ error: `Dataset has ${created.rowCount.toLocaleString()} rows, which exceeds the ${MAX_ROWS.toLocaleString()} row limit.` });
+    }
+    res.status(201).json(created);
+  } catch (err) {
+    if (err.message === 'Dataset not found') return res.status(404).json({ error: err.message });
     throw err;
   }
 }));
