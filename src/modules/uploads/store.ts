@@ -12,6 +12,9 @@ export interface UploadEntry {
   rowCount: number;
   columnCount: number;
   message?: string;
+  // Kept around so a failed save can be retried without re-browsing for the file —
+  // only set once parsing succeeds, so a parse failure still has nothing to retry from.
+  rows?: Record<string, unknown>[];
 }
 
 interface UploadStoreState {
@@ -20,6 +23,7 @@ interface UploadStoreState {
   setProgress(name: string, progress: number): void;
   finishFile(name: string, sourceType: DatasetSourceType, rows: Record<string, unknown>[]): void;
   failFile(name: string, message: string): void;
+  retry(name: string): void;
   dismiss(name: string): void;
 }
 
@@ -49,7 +53,7 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
     const schema: FieldSchema[] = buildSchema(rows);
     set(s => ({
       uploads: s.uploads.map(u => (u.name === name
-        ? { ...u, status: 'saving', progress: 100, rowCount: rows.length, columnCount: schema.length }
+        ? { ...u, status: 'saving', progress: 100, rowCount: rows.length, columnCount: schema.length, rows }
         : u)),
     }));
     useDatasetStore.getState().upload(name, sourceType, schema, rows)
@@ -66,6 +70,12 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
   failFile(name, message) {
     set(s => ({ uploads: s.uploads.map(u => (u.name === name ? { ...u, status: 'error', progress: 100, message } : u)) }));
     toast.error(`"${name}": ${message}`);
+  },
+
+  retry(name) {
+    const entry = get().uploads.find(u => u.name === name);
+    if (!entry?.rows) return;
+    get().finishFile(name, entry.sourceType, entry.rows);
   },
 
   dismiss(name) {

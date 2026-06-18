@@ -3,7 +3,7 @@ import { useRef } from 'react';
 import Papa from 'papaparse';
 import {
   Database, Upload, FileSpreadsheet, FileJson, Globe, Server, Check, X,
-  Folder, Table2, Loader2, Pencil, Trash2, Eye,
+  Folder, Table2, Loader2, Pencil, Trash2, Eye, RotateCw,
 } from 'lucide-react';
 
 import Panel from '@/components/Panel';
@@ -337,6 +337,7 @@ function FilesSection() {
   const setProgress = useUploadStore(s => s.setProgress);
   const finishFile = useUploadStore(s => s.finishFile);
   const failFile = useUploadStore(s => s.failFile);
+  const retryUpload = useUploadStore(s => s.retry);
   const dismiss = useUploadStore(s => s.dismiss);
   const csvRef = useRef<HTMLInputElement>(null);
   const excelRef = useRef<HTMLInputElement>(null);
@@ -486,6 +487,11 @@ function FilesSection() {
                   )}
                   {f.status === 'saved' && (
                     <span style={{ color: '#16a34a' }} className="text-xs inline-flex items-center gap-1"><Check size={13} /> Saved &amp; active</span>
+                  )}
+                  {f.status === 'error' && f.rows && (
+                    <Button variant="ghost" size="sm" onClick={() => retryUpload(f.name)}>
+                      <RotateCw size={13} /> Retry
+                    </Button>
                   )}
                   <button type="button" onClick={() => dismiss(f.name)}>
                     <X size={14} style={{ color: C.mut }} />
