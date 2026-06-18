@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { runQuery } from './engine';
+import { runQuery, runRawSql } from './engine';
 import { useDataStore } from '@/store/dataStore';
 import { field, agg, makeSelectItem } from '@/lib/exprBuilders';
 import { emptyKpiMeta, emptyLogicalGroup, type Query } from '@/types/expr';
@@ -70,5 +70,34 @@ describe('runQuery with joins', () => {
       joins: [{ id: 'j1', type: 'INNER', rightTable: 'dim_vendor', leftKey: 'fact_alarms.vendor', rightKey: 'dim_vendor.vendor' }],
     });
     expect(() => runQuery(q, baseData, baseSchema)).toThrow(/no longer loaded/);
+  });
+});
+
+describe('runRawSql across multiple datasets', () => {
+  it('can query a dataset other than the active one purely by name', () => {
+    useDataStore.getState().loadJoinTable('dim_vendor', [
+      { vendor: 'Nokia', region: 'EMEA' },
+      { vendor: 'Ericsson', region: 'APAC' },
+    ]);
+    const result = runRawSql('SELECT * FROM dim_vendor WHERE region = \'APAC\'', baseData, baseSchema, 'fact_alarms');
+    expect(result.rows).toEqual([{ vendor: 'Ericsson', region: 'APAC' }]);
+  });
+
+  it('can join the active table with another loaded dataset in the same query', () => {
+    useDataStore.getState().loadJoinTable('dim_vendor', [
+      { vendor: 'Nokia', region: 'EMEA' },
+      { vendor: 'Ericsson', region: 'APAC' },
+    ]);
+    const result = runRawSql(
+      'SELECT fact_alarms.alarm_id, dim_vendor.region FROM fact_alarms JOIN dim_vendor ON fact_alarms.vendor = dim_vendor.vendor ORDER BY fact_alarms.alarm_id',
+      baseData,
+      baseSchema,
+      'fact_alarms'
+    );
+    expect(result.rows).toEqual([
+      { alarm_id: 1, region: 'EMEA' },
+      { alarm_id: 2, region: 'APAC' },
+      { alarm_id: 3, region: 'EMEA' },
+    ]);
   });
 });

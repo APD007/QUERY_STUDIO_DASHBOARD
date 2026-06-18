@@ -41,7 +41,7 @@ export default function StudioSql({
   onGoToDashboard: () => void;
   onGoToBuilder: () => void;
 }) {
-  const { data, schema, sourceName } = useDataStore();
+  const { data, schema, sourceName, joinTables } = useDataStore();
   const { queries, saveQuery } = useQueryStore();
   const { addWidget } = useWidgetStore();
   const sql = useSqlEditorStore(s => s.sql);
@@ -55,8 +55,8 @@ export default function StudioSql({
   const [queryName, setQueryName] = useState('untitled_query');
   const [previewChart, setPreviewChart] = useState<ChartType>('table');
   const [widgetForm, setWidgetForm] = useState<WidgetFormState | null>(null);
-  const schemaRef = useRef({ schema, tableName: sourceName });
-  schemaRef.current = { schema, tableName: sourceName };
+  const schemaRef = useRef({ schema, tableName: sourceName, joinTables });
+  schemaRef.current = { schema, tableName: sourceName, joinTables };
 
   const buildSqlQuery = (): Query => ({
     id: null,
@@ -161,12 +161,12 @@ export default function StudioSql({
           startColumn: word.startColumn,
           endColumn: word.endColumn,
         };
-        const { schema: liveSchema, tableName } = schemaRef.current;
+        const { schema: liveSchema, tableName, joinTables: liveJoinTables } = schemaRef.current;
         const keywordSuggestions = [
           'SELECT', 'FROM', 'WHERE', 'GROUP BY', 'ORDER BY', 'HAVING', 'LIMIT',
           'AND', 'OR', 'NOT', 'IN', 'BETWEEN', 'LIKE', 'IS NULL', 'IS NOT NULL',
           'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'DISTINCT', 'CASE', 'WHEN', 'THEN', 'ELSE', 'END',
-          'ASC', 'DESC',
+          'ASC', 'DESC', 'JOIN', 'ON',
         ].map(kw => ({
           label: kw,
           kind: monaco.languages.CompletionItemKind.Keyword,
@@ -177,9 +177,19 @@ export default function StudioSql({
           label: tableName,
           kind: monaco.languages.CompletionItemKind.Class,
           insertText: tableName,
-          detail: 'table',
+          detail: 'active table',
           range,
         };
+        // Every other dataset (demo + uploaded) is queryable by name too, not just the active one.
+        const otherTableSuggestions = Object.keys(liveJoinTables)
+          .filter(name => name !== tableName)
+          .map(name => ({
+            label: name,
+            kind: monaco.languages.CompletionItemKind.Class,
+            insertText: name,
+            detail: 'dataset',
+            range,
+          }));
         const fieldSuggestions = liveSchema.map(f => ({
           label: f.name,
           kind: monaco.languages.CompletionItemKind.Field,
@@ -187,7 +197,7 @@ export default function StudioSql({
           detail: f.type,
           range,
         }));
-        return { suggestions: [tableSuggestion, ...fieldSuggestions, ...keywordSuggestions] };
+        return { suggestions: [tableSuggestion, ...otherTableSuggestions, ...fieldSuggestions, ...keywordSuggestions] };
       },
     });
   };
@@ -212,8 +222,11 @@ export default function StudioSql({
             className="font-bold text-lg bg-transparent outline-none flex-1 min-w-0"
           />
           <span style={{ color: C.mut }} className="text-xs">
-            Querying <strong style={{ color: C.ink }}>{sourceName}</strong> · {data.length.toLocaleString()} rows
+            Active table <strong style={{ color: C.ink }}>{sourceName}</strong> · {data.length.toLocaleString()} rows
           </span>
+        </div>
+        <div style={{ color: C.mut }} className="text-xs -mt-1 mb-2">
+          Every dataset in the sidebar is queryable by name — e.g. <code style={{ background: C.page }} className="px-1 rounded">SELECT * FROM {sourceName} JOIN other_dataset ON ...</code>, not just the active one.
         </div>
 
         <div style={{ border: `1px solid ${C.line}`, borderRadius: 10, overflow: 'hidden' }}>

@@ -40,6 +40,14 @@ export function runRawSql(
   // `FROM <tableName>` resolves exactly as the user wrote it.
   (alasql.tables as Record<string, { data: unknown[] }>)[tableName] = { data: normalised };
 
+  // Also expose every other known dataset (demo + uploaded) under its own name,
+  // so the query text — not which dataset happens to be "active" — decides what's queried.
+  const joinTables = useDataStore.getState().joinTables;
+  Object.entries(joinTables).forEach(([name, t]) => {
+    if (name === tableName) return;
+    (alasql.tables as Record<string, { data: unknown[] }>)[name] = { data: t.rows };
+  });
+
   let rows: Record<string, unknown>[];
   try {
     rows = alasql(sql) as Record<string, unknown>[];

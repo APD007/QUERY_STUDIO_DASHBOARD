@@ -8,6 +8,7 @@ import { useWidgetStore } from './modules/widgets/store';
 import { useDashboardStore } from './modules/dashboard/store';
 import { useDatasetStore } from './modules/datasets/store';
 import { useAuthStore } from './store/authStore';
+import { useDataStore } from './store/dataStore';
 import { C } from './palette';
 
 const AiAssistantPage = lazy(() => import('./pages/AiAssistantPage'));
@@ -50,6 +51,14 @@ export default function App() {
   const resetDatasets = useDatasetStore(s => s.reset);
 
   useEffect(() => { checkSession(); }, [checkSession]);
+
+  // Demo datasets are never persisted, but should still be queryable by name in raw SQL
+  // alongside uploaded ones — register them once as soon as the app mounts.
+  useEffect(() => {
+    import('./data/demoDatasets').then(m => {
+      m.DEMO_DATASETS.forEach(d => useDataStore.getState().loadJoinTable(d.key, d.make()));
+    });
+  }, []);
 
   useEffect(() => {
     if (status === 'authenticated') {
