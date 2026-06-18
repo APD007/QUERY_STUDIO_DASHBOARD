@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { DndContext, type DragEndEvent } from '@dnd-kit/core';
 import Papa from 'papaparse';
 import {
-  Upload, Database, Play, Save, PieChart as PieIcon, Table2, BarChart3, Trash2,
+  Upload, Database, Play, Save, PieChart as PieIcon, Table2, BarChart3,
   Check, ChevronRight, ChevronLeft, Code2,
 } from 'lucide-react';
 
@@ -10,6 +10,7 @@ import Panel from '@/components/Panel';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
+import DatasetSidebar from '@/components/DatasetSidebar';
 
 import OperatorPalette from '@/modules/queries/components/OperatorPalette';
 import FieldExplorer from '@/modules/queries/components/FieldExplorer';
@@ -35,7 +36,7 @@ import { useSqlEditorStore } from '@/store/sqlEditorStore';
 import { validateQuery } from '@/lib/validateQuery';
 import { buildDisplaySql } from '@/lib/sqlGenerator';
 import { field, compare } from '@/lib/exprBuilders';
-import type { AggFn, ValidationResult } from '@/types/expr';
+import type { AggFn, ValidationResult, Query } from '@/types/expr';
 import type { DragData, DropData } from '@/types/dnd';
 import type { RowOp } from '@/lib/conditionOps';
 import { C, SEV } from '@/palette';
@@ -57,7 +58,7 @@ export default function QueryBuilderPage({
   onGoToDashboard: () => void;
 }) {
   const { data, schema, sourceName, loadCSV, resetSample, joinTables, loadJoinTable } = useDataStore();
-  const { queries, saveQuery, deleteQuery } = useQueryStore();
+  const { queries, saveQuery } = useQueryStore();
   const { addWidget } = useWidgetStore();
 
   const draft = useQueryDraftStore(s => s.draft);
@@ -188,6 +189,15 @@ export default function QueryBuilderPage({
   const sendToStudio = () => {
     setSql(buildDisplaySql({ ...draft, mode: 'visual' }));
     onGoToStudio();
+  };
+
+  const loadSavedQuery = (q: Query) => {
+    setDraft({ ...q });
+    try {
+      setResult(runQuery(q, data, schemaForJoins(q.joins)));
+      setValidation({ ok: true, errors: [] });
+    } catch { /* ignore */ }
+    setStep('sql');
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -438,6 +448,8 @@ export default function QueryBuilderPage({
   return (
     <DndContext onDragEnd={handleDragEnd}>
       <div className="flex flex-col lg:flex-row gap-4 p-4 mx-auto" style={{ maxWidth: 1600 }}>
+        <DatasetSidebar onSelectQuery={loadSavedQuery} />
+
         {/* ===== LEFT RAIL ===== */}
         <div className="lg:w-64 shrink-0 space-y-4">
           <Panel>
@@ -448,42 +460,6 @@ export default function QueryBuilderPage({
                 onAddField={name => addSelectItem({ id: 'sel_' + Date.now(), expr: field(name), label: name })}
               />
             </div>
-          </Panel>
-
-          <Panel>
-            <Label>Saved queries</Label>
-            {queries.length === 0 ? (
-              <div style={{ color: C.mut }} className="text-sm py-3">Run and save a query to reuse it.</div>
-            ) : (
-              <div className="mt-1 space-y-1">
-                {queries.map(q => (
-                  <div
-                    key={q.id}
-                    style={{ border: `1px solid ${C.line}` }}
-                    className="flex items-center justify-between rounded-lg px-2.5 py-1.5"
-                  >
-                    <button
-                      onClick={() => {
-                        setDraft({ ...q });
-                        try {
-                          setResult(runQuery(q, data, schemaForJoins(q.joins)));
-                          setValidation({ ok: true, errors: [] });
-                        } catch { /* ignore */ }
-                        setStep('sql');
-                      }}
-                      type="button"
-                      style={{ color: C.ink }}
-                      className="text-sm font-medium truncate flex-1 text-left"
-                    >
-                      {q.name}
-                    </button>
-                    <button onClick={() => q.id && deleteQuery(q.id)} type="button">
-                      <Trash2 size={13} style={{ color: C.mut }} />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </Panel>
         </div>
 

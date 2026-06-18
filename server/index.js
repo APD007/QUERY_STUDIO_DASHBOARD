@@ -15,6 +15,7 @@ import { assertPublicHost } from './security/ssrfGuard.js';
 import { requireAuth } from './middleware/requireAuth.js';
 import authRouter from './routes/auth.js';
 import { queriesRouter, widgetsRouter, dashboardsRouter } from './routes/collections.js';
+import { datasetsRouter } from './routes/datasets.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -26,7 +27,7 @@ app.set('trust proxy', 1);
 // Same-origin in production (frontend is served by this same process); permissive in dev
 // where Vite runs on a different port.
 app.use(cors(process.env.NODE_ENV === 'production' ? {} : { origin: true, credentials: true }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '40mb' })); // dataset uploads (JSON-encoded rows) are larger than other collection payloads
 app.use(cookieParser());
 
 const upload = multer({ dest: uploadsDir, limits: { fileSize: 25 * 1024 * 1024 } }); // 25MB cap
@@ -40,6 +41,7 @@ app.use('/api/auth', authLimiter, authRouter);
 app.use('/api/queries', queriesRouter);
 app.use('/api/widgets', widgetsRouter);
 app.use('/api/dashboards', dashboardsRouter);
+app.use('/api/datasets', datasetsRouter);
 
 /* ---- SQLite file upload: returns a server-side path to use as `database` ---- */
 app.post('/api/sqlite/upload', requireAuth, upload.single('file'), (req, res) => {

@@ -3,12 +3,13 @@ import Editor, { type OnMount, type BeforeMount } from '@monaco-editor/react';
 import { format as formatSql } from 'sql-formatter';
 import {
   Play, Save, Eraser, Copy, Wand2, Check, AlertCircle, Clock, Rows3,
-  PieChart as PieIcon, BarChart3, Activity, AreaChart as AreaIcon, Hash, Table2, Sliders, Trash2,
+  PieChart as PieIcon, BarChart3, Activity, AreaChart as AreaIcon, Hash, Table2, Sliders,
 } from 'lucide-react';
 
 import Panel from '@/components/Panel';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
+import DatasetSidebar from '@/components/DatasetSidebar';
 
 import ChartView from '@/modules/widgets/ChartView';
 import WidgetForm, { type WidgetFormState } from '@/modules/widgets/WidgetForm';
@@ -41,7 +42,7 @@ export default function StudioSql({
   onGoToBuilder: () => void;
 }) {
   const { data, schema, sourceName } = useDataStore();
-  const { queries, saveQuery, deleteQuery } = useQueryStore();
+  const { queries, saveQuery } = useQueryStore();
   const { addWidget } = useWidgetStore();
   const sql = useSqlEditorStore(s => s.sql);
   const setSql = useSqlEditorStore(s => s.setSql);
@@ -199,7 +200,9 @@ export default function StudioSql({
   const previewQuery: Query = { ...buildSqlQuery(), id: '_preview' };
 
   return (
-    <div className="p-4 mx-auto space-y-4" style={{ maxWidth: 1400 }}>
+    <div className="flex flex-col lg:flex-row gap-4 p-4 mx-auto" style={{ maxWidth: 1600 }}>
+      <DatasetSidebar onSelectQuery={loadSavedQuery} />
+      <div className="flex-1 min-w-0 space-y-4">
       <Panel>
         <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
           <input
@@ -245,30 +248,6 @@ export default function StudioSql({
         {builderError && (
           <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8 }} className="text-xs p-2.5 mt-2">
             {builderError}
-          </div>
-        )}
-      </Panel>
-
-      <Panel>
-        <Label>Saved queries</Label>
-        {queries.length === 0 ? (
-          <div style={{ color: C.mut }} className="text-sm py-2">Run and save a query to reuse it here.</div>
-        ) : (
-          <div className="flex flex-wrap gap-1.5 mt-2">
-            {queries.map(q => (
-              <div
-                key={q.id}
-                style={{ border: `1px solid ${C.line}` }}
-                className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1"
-              >
-                <button onClick={() => loadSavedQuery(q)} type="button" style={{ color: C.ink }} className="text-sm font-medium">
-                  {q.name}
-                </button>
-                <button onClick={() => q.id && deleteQuery(q.id)} type="button">
-                  <Trash2 size={12} style={{ color: C.mut }} />
-                </button>
-              </div>
-            ))}
           </div>
         )}
       </Panel>
@@ -376,6 +355,7 @@ export default function StudioSql({
           />
         </Panel>
       )}
+      </div>
 
       {widgetForm && (
         <WidgetForm

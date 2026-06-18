@@ -103,3 +103,31 @@ export async function fetchViaProxy(opts: RestFetchOptions): Promise<unknown> {
   const { data } = await postJson<{ status: number; data: unknown }>('/api/proxy/fetch', opts);
   return data;
 }
+
+/* ============================================================ Datasets ============================================================ */
+
+export type DatasetSourceType = 'csv' | 'excel' | 'json' | 'rest' | 'database';
+
+export interface DatasetMeta {
+  id: string;
+  name: string;
+  sourceType: DatasetSourceType;
+  rowCount: number;
+  columnCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface DatasetFull extends DatasetMeta {
+  schema: { name: string; type: string }[];
+  rows: Record<string, unknown>[];
+}
+
+export const datasetsApi = {
+  list: () => request<{ items: DatasetMeta[] }>('GET', '/api/datasets').then(r => r.items),
+  get: (id: string) => request<DatasetFull>('GET', `/api/datasets/${id}`),
+  upload: (name: string, sourceType: DatasetSourceType, schema: { name: string; type: string }[], rows: Record<string, unknown>[]) =>
+    request<DatasetMeta>('POST', '/api/datasets', { name, sourceType, schema, rows }),
+  rename: (id: string, name: string) => request<{ ok: boolean }>('PATCH', `/api/datasets/${id}`, { name }).then(() => {}),
+  remove: (id: string) => request<{ ok: boolean }>('DELETE', `/api/datasets/${id}`).then(() => {}),
+};

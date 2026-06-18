@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
+import { useRef } from 'react';
 import Papa from 'papaparse';
 import {
   Database, Upload, FileSpreadsheet, FileJson, Globe, Server, Check, X,
-  Folder, Table2, History, Loader2,
+  Folder, Table2, Loader2, Pencil, Trash2, Eye,
 } from 'lucide-react';
 
 import Panel from '@/components/Panel';
@@ -12,13 +13,15 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem as SelectOption } from '@/components/ui/select';
 
 import { useDataStore } from '@/store/dataStore';
+import { useDatasetStore } from '@/modules/datasets/store';
 import { buildSchema, type FieldSchema } from '@/modules/queries/schema';
 import { sanitizeTableName } from '@/lib/tableName';
 import { coerceToRows } from '@/lib/flatten';
 import {
-  uploadSqliteFile, testDbConnection, listDbTables, importDbTable, fetchViaProxy,
-  type DbType,
+  datasetsApi, uploadSqliteFile, testDbConnection, listDbTables, importDbTable, fetchViaProxy,
+  type DatasetSourceType, type DbType,
 } from '@/lib/apiClient';
+import type { DemoDataset } from '@/data/demoDatasets';
 import { C } from '@/palette';
 
 type Section = 'demo' | 'files' | 'rest' | 'database';
@@ -29,13 +32,6 @@ const SECTIONS: [Section, string, typeof Database][] = [
   ['database', 'Database connection', Server],
 ];
 
-interface HistoryEntry {
-  name: string;
-  rows: number;
-  cols: number;
-  data: Record<string, unknown>[];
-}
-
 const DB_TYPES: { value: DbType; label: string; wired: boolean }[] = [
   { value: 'sqlite', label: 'SQLite', wired: true },
   { value: 'postgres', label: 'PostgreSQL', wired: true },
@@ -44,22 +40,95 @@ const DB_TYPES: { value: DbType; label: string; wired: boolean }[] = [
   { value: 'oracle', label: 'Oracle', wired: false },
 ];
 
+interface PreviewState {
+  name: string;
+  schema: FieldSchema[];
+  rows: Record<string, unknown>[];
+}
+
+interface ManagerRow {
+  key: string;
+  name: string;
+  rowCount: number | null;
+  columnCount: number | null;
+  type: string;
+  uploadedAt: string | null;
+  kind: 'demo' | 'persisted';
+  demoKey?: string;
+  datasetId?: string;
+}
+
 export default function DataSourcesPage() {
   const { sourceName, data, schema, loadDataset } = useDataStore();
+  const datasets = useDatasetStore(s => s.datasets);
+  const activateDataset = useDatasetStore(s => s.activate);
+  const uploadDataset = useDatasetStore(s => s.upload);
+  const renameDataset = useDatasetStore(s => s.rename);
+  const removeDataset = useDatasetStore(s => s.remove);
+
   const [section, setSection] = useState<Section>('demo');
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
+  const [demos, setDemos] = useState<DemoDataset[] | null>(null);
+  if (!demos) {
+    import('@/data/demoDatasets').then(m => setDemos(m.DEMO_DATASETS));
+  }
 
-  const remember = (name: string, rows: Record<string, unknown>[]) => {
-    setHistory(h => {
-      const cols = rows.length ? Object.keys(rows[0]).length : 0;
-      const next = [{ name, rows: rows.length, cols, data: rows }, ...h.filter(e => e.name !== name)];
-      return next.slice(0, 8);
-    });
-  };
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [previewBusyId, setPreviewBusyId] = useState<string | null>(null);
 
+  // Demo datasets are generated client-side and intentionally never persisted.
   const activate = (name: string, rows: Record<string, unknown>[]) => {
     loadDataset(rows, name);
-    remember(sanitizeTableName(name), rows);
+  };
+
+  // File / REST / Database sources are persisted to Postgres (so they survive a
+  // refresh or redeploy and show up everywhere) and then activated immediately.
+  const persistAndActivate = async (name: string, sourceType: DatasetSourceType, rows: Record<string, unknown>[]) => {
+    await uploadDataset(name, sourceType, buildSchema(rows), rows);
+  };
+
+  const previewDemo = (d: DemoDataset) => {
+    const rows = d.make();
+    setPreview({ name: d.label, schema: buildSchema(rows), rows: rows.slice(0, 20) });
+  };
+
+  const previewDataset = async (id: string, name: string) => {
+    setPreviewBusyId(id);
+    try {
+      const full = await datasetsApi.get(id);
+      setPreview({ name, schema: buildSchema(full.rows), rows: full.rows.slice(0, 20) });
+    } finally {
+      setPreviewBusyId(null);
+    }
+  };
+
+  const managerRows: ManagerRow[] = [
+    ...(demos ?? []).map(d => ({
+      key: `demo:${d.key}`, name: d.label, rowCount: null, columnCount: null,
+      type: 'Demo', uploadedAt: null, kind: 'demo' as const, demoKey: d.key,
+    })),
+    ...datasets.map(ds => ({
+      key: `ds:${ds.id}`, name: ds.name, rowCount: ds.rowCount, columnCount: ds.columnCount,
+      type: ds.sourceType, uploadedAt: ds.updatedAt, kind: 'persisted' as const, datasetId: ds.id,
+    })),
+  ];
+
+  const selectRow = (r: ManagerRow) => {
+    if (r.kind === 'demo') {
+      const def = demos?.find(d => d.key === r.demoKey);
+      if (def) activate(def.key, def.make());
+    } else if (r.datasetId) {
+      activateDataset(r.datasetId);
+    }
+  };
+
+  const previewRow = (r: ManagerRow) => {
+    if (r.kind === 'demo') {
+      const def = demos?.find(d => d.key === r.demoKey);
+      if (def) previewDemo(def);
+    } else if (r.datasetId) {
+      previewDataset(r.datasetId, r.name);
+    }
   };
 
   return (
@@ -88,25 +157,115 @@ export default function DataSourcesPage() {
       </Panel>
 
       {section === 'demo' && <DemoSection onActivate={activate} />}
-      {section === 'files' && <FilesSection onActivate={activate} />}
-      {section === 'rest' && <RestSection onActivate={activate} />}
-      {section === 'database' && <DatabaseSection onActivate={activate} />}
+      {section === 'files' && <FilesSection onPersist={persistAndActivate} />}
+      {section === 'rest' && <RestSection onPersist={persistAndActivate} />}
+      {section === 'database' && <DatabaseSection onPersist={persistAndActivate} />}
 
-      {history.length > 0 && (
+      <Panel>
+        <Label>All datasets</Label>
+        <div className="mt-2 overflow-auto" style={{ border: `1px solid ${C.line}`, borderRadius: 10 }}>
+          <table className="w-full text-sm">
+            <thead>
+              <tr style={{ background: C.skyl }}>
+                {['Name', 'Rows', 'Columns', 'Type', 'Uploaded', ''].map(h => (
+                  <th key={h} style={{ color: C.ink }} className="text-left font-semibold px-3 py-2 whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {managerRows.map(r => {
+                const isActive = sourceName === sanitizeTableName(r.name);
+                return (
+                  <tr key={r.key} style={{ borderTop: `1px solid ${C.line}`, background: isActive ? C.skyl : undefined }}>
+                    <td className="px-3 py-1.5">
+                      {renaming && renaming.id === r.datasetId ? (
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            autoFocus
+                            value={renaming.value}
+                            onChange={e => setRenaming({ id: renaming.id, value: e.target.value })}
+                            className="h-7 text-sm"
+                          />
+                          <button
+                            type="button"
+                            onClick={async () => { await renameDataset(renaming.id, renaming.value); setRenaming(null); }}
+                          >
+                            <Check size={14} style={{ color: '#16a34a' }} />
+                          </button>
+                          <button type="button" onClick={() => setRenaming(null)}>
+                            <X size={14} style={{ color: C.mut }} />
+                          </button>
+                        </div>
+                      ) : (
+                        <span style={{ color: C.ink }} className="font-medium">
+                          {r.name}{isActive && <span style={{ color: C.blue }} className="text-xs font-semibold ml-1.5">· active</span>}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5" style={{ color: C.mut }}>{r.rowCount != null ? r.rowCount.toLocaleString() : '—'}</td>
+                    <td className="px-3 py-1.5" style={{ color: C.mut }}>{r.columnCount ?? '—'}</td>
+                    <td className="px-3 py-1.5" style={{ color: C.mut }}>{r.type}</td>
+                    <td className="px-3 py-1.5" style={{ color: C.mut }}>{r.uploadedAt ? new Date(r.uploadedAt).toLocaleString() : '—'}</td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center justify-end gap-2">
+                        <Button size="sm" variant="soft" onClick={() => selectRow(r)}>Select</Button>
+                        <button type="button" onClick={() => previewRow(r)} title="Preview">
+                          {previewBusyId === r.datasetId
+                            ? <Loader2 size={14} className="animate-spin" style={{ color: C.mut }} />
+                            : <Eye size={14} style={{ color: C.mut }} />}
+                        </button>
+                        {r.kind === 'persisted' && r.datasetId && (
+                          <>
+                            <button type="button" onClick={() => setRenaming({ id: r.datasetId!, value: r.name })} title="Rename">
+                              <Pencil size={14} style={{ color: C.mut }} />
+                            </button>
+                            <button type="button" onClick={() => removeDataset(r.datasetId!)} title="Delete">
+                              <Trash2 size={14} style={{ color: C.mut }} />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Panel>
+
+      {preview && (
         <Panel>
-          <Label className="flex items-center gap-1.5"><History size={13} /> Dataset history (this session)</Label>
-          <div className="mt-2 space-y-1">
-            {history.map(h => (
-              <div
-                key={h.name}
-                style={{ border: `1px solid ${C.line}` }}
-                className="flex items-center justify-between rounded-lg px-3 py-1.5"
-              >
-                <span style={{ color: C.ink }} className="text-sm font-medium truncate">{h.name}</span>
-                <span style={{ color: C.mut }} className="text-xs mr-3">{h.rows.toLocaleString()} rows · {h.cols} cols</span>
-                <Button variant="ghost" size="sm" onClick={() => loadDataset(h.data, h.name)}>Use</Button>
-              </div>
+          <div className="flex items-center justify-between">
+            <Label>Preview — {preview.name}</Label>
+            <button type="button" onClick={() => setPreview(null)}><X size={14} style={{ color: C.mut }} /></button>
+          </div>
+          <div className="flex flex-wrap gap-1.5 mt-2 mb-2">
+            {preview.schema.map(s => (
+              <span key={s.name} style={{ background: C.page, color: C.mut }} className="text-xs rounded-full px-2 py-0.5">
+                {s.name} <span style={{ color: C.line }}>·</span> {s.type}
+              </span>
             ))}
+          </div>
+          <div className="overflow-auto max-h-72" style={{ border: `1px solid ${C.line}`, borderRadius: 10 }}>
+            <table className="w-full text-sm">
+              <thead className="sticky top-0">
+                <tr style={{ background: C.skyl }}>
+                  {preview.schema.map(s => (
+                    <th key={s.name} style={{ color: C.ink }} className="text-left font-semibold px-3 py-2 whitespace-nowrap">{s.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {preview.rows.map((row, i) => (
+                  <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
+                    {preview.schema.map(s => (
+                      <td key={s.name} className="px-3 py-1.5 whitespace-nowrap" style={{ color: C.text }}>{String(row[s.name] ?? '')}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </Panel>
       )}
@@ -119,7 +278,7 @@ export default function DataSourcesPage() {
 function DemoSection({ onActivate }: { onActivate: (name: string, rows: Record<string, unknown>[]) => void }) {
   const [loadingKey, setLoadingKey] = useState<string | null>(null);
   // Lazily imported to keep the initial bundle from carrying every generator unless visited.
-  const [datasets, setDatasets] = useState<typeof import('@/data/demoDatasets').DEMO_DATASETS | null>(null);
+  const [datasets, setDatasets] = useState<DemoDataset[] | null>(null);
 
   if (!datasets) {
     import('@/data/demoDatasets').then(m => setDatasets(m.DEMO_DATASETS));
@@ -162,23 +321,28 @@ function DemoSection({ onActivate }: { onActivate: (name: string, rows: Record<s
 
 interface UploadedFile {
   name: string;
-  status: 'uploading' | 'ready' | 'error';
+  sourceType: DatasetSourceType;
+  status: 'uploading' | 'ready' | 'saving' | 'saved' | 'error';
   progress: number;
   rows: Record<string, unknown>[];
   schema: FieldSchema[];
   message?: string;
 }
 
-function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<string, unknown>[]) => void }) {
+function FilesSection({
+  onPersist,
+}: {
+  onPersist: (name: string, sourceType: DatasetSourceType, rows: Record<string, unknown>[]) => Promise<void>;
+}) {
   const [dragOver, setDragOver] = useState(false);
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const csvRef = useRef<HTMLInputElement>(null);
   const excelRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
 
-  const startFile = (name: string) => {
+  const startFile = (name: string, sourceType: DatasetSourceType) => {
     setFiles(prev => [
-      { name, status: 'uploading', progress: 0, rows: [], schema: [] },
+      { name, sourceType, status: 'uploading', progress: 0, rows: [], schema: [] },
       ...prev.filter(x => x.name !== name),
     ]);
   };
@@ -203,9 +367,19 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
     setFiles(prev => prev.map(f => (f.name === name ? { ...f, status: 'error', progress: 100, message } : f)));
   };
 
+  const handleUseDataset = async (f: UploadedFile) => {
+    setFiles(prev => prev.map(x => (x.name === f.name ? { ...x, status: 'saving' } : x)));
+    try {
+      await onPersist(f.name, f.sourceType, f.rows);
+      setFiles(prev => prev.map(x => (x.name === f.name ? { ...x, status: 'saved' } : x)));
+    } catch (err) {
+      setFiles(prev => prev.map(x => (x.name === f.name ? { ...x, status: 'error', message: (err as Error).message } : x)));
+    }
+  };
+
   const handleCsvFiles = (fileList: FileList | File[]) => {
     Array.from(fileList).forEach(f => {
-      startFile(f.name);
+      startFile(f.name, 'csv');
       const reader = new FileReader();
       reader.onprogress = e => {
         if (e.lengthComputable) setProgress(f.name, Math.round((e.loaded / e.total) * 100));
@@ -232,7 +406,7 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
 
   const handleExcelFiles = (fileList: FileList | File[]) => {
     Array.from(fileList).forEach(f => {
-      startFile(f.name);
+      startFile(f.name, 'excel');
       const reader = new FileReader();
       reader.onprogress = e => {
         if (e.lengthComputable) setProgress(f.name, Math.round((e.loaded / e.total) * 100));
@@ -256,7 +430,7 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
 
   const handleJsonFiles = (fileList: FileList | File[]) => {
     Array.from(fileList).forEach(f => {
-      startFile(f.name);
+      startFile(f.name, 'json');
       const reader = new FileReader();
       reader.onprogress = e => {
         if (e.lengthComputable) setProgress(f.name, Math.round((e.loaded / e.total) * 100));
@@ -326,7 +500,7 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
                   {f.status === 'uploading' && (
                     <span style={{ color: C.mut }} className="text-xs ml-2">Uploading… {f.progress}%</span>
                   )}
-                  {f.status === 'ready' && (
+                  {(f.status === 'ready' || f.status === 'saving' || f.status === 'saved') && (
                     <span style={{ color: C.mut }} className="text-xs ml-2">{f.rows.length.toLocaleString()} rows · {f.schema.length} columns</span>
                   )}
                   {f.status === 'error' && (
@@ -335,7 +509,13 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
                 </div>
                 <div className="flex items-center gap-2">
                   {f.status === 'ready' && (
-                    <Button size="sm" onClick={() => onActivate(f.name, f.rows)}><Check size={13} /> Use this dataset</Button>
+                    <Button size="sm" onClick={() => handleUseDataset(f)}><Check size={13} /> Use this dataset</Button>
+                  )}
+                  {f.status === 'saving' && (
+                    <Button size="sm" disabled><Loader2 size={13} className="animate-spin" /> Saving…</Button>
+                  )}
+                  {f.status === 'saved' && (
+                    <span style={{ color: '#16a34a' }} className="text-xs inline-flex items-center gap-1"><Check size={13} /> Saved &amp; active</span>
                   )}
                   <button type="button" onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))}>
                     <X size={14} style={{ color: C.mut }} />
@@ -349,7 +529,7 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
                   />
                 </div>
               )}
-              {f.status === 'ready' && f.schema.length > 0 && (
+              {(f.status === 'ready' || f.status === 'saving' || f.status === 'saved') && f.schema.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 mt-2">
                   {f.schema.map(s => (
                     <span key={s.name} style={{ background: C.page, color: C.mut }} className="text-xs rounded-full px-2 py-0.5">
@@ -368,7 +548,11 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
 
 /* ============================================================ REST API ============================================================ */
 
-function RestSection({ onActivate }: { onActivate: (name: string, rows: Record<string, unknown>[]) => void }) {
+function RestSection({
+  onPersist,
+}: {
+  onPersist: (name: string, sourceType: DatasetSourceType, rows: Record<string, unknown>[]) => Promise<void>;
+}) {
   const [url, setUrl] = useState('');
   const [method, setMethod] = useState('GET');
   const [headersText, setHeadersText] = useState('');
@@ -391,8 +575,8 @@ function RestSection({ onActivate }: { onActivate: (name: string, rows: Record<s
       const rows = coerceToRows(data);
       if (!rows.length) { setStatus({ kind: 'error', message: 'Response did not contain any rows.' }); return; }
       const name = new URL(url).hostname.replace(/\./g, '_');
-      onActivate(name, rows);
-      setStatus({ kind: 'ok', message: `Loaded ${rows.length} rows.` });
+      await onPersist(name, 'rest', rows);
+      setStatus({ kind: 'ok', message: `Loaded and saved ${rows.length} rows.` });
     } catch (err) {
       setStatus({ kind: 'error', message: (err as Error).message });
     }
@@ -435,7 +619,11 @@ function RestSection({ onActivate }: { onActivate: (name: string, rows: Record<s
 
 /* ============================================================ Database ============================================================ */
 
-function DatabaseSection({ onActivate }: { onActivate: (name: string, rows: Record<string, unknown>[]) => void }) {
+function DatabaseSection({
+  onPersist,
+}: {
+  onPersist: (name: string, sourceType: DatasetSourceType, rows: Record<string, unknown>[]) => Promise<void>;
+}) {
   const [type, setType] = useState<DbType>('sqlite');
   const [host, setHost] = useState('');
   const [port, setPort] = useState('');
@@ -492,8 +680,8 @@ function DatabaseSection({ onActivate }: { onActivate: (name: string, rows: Reco
     setBusy(true);
     try {
       const rows = await importDbTable(conn, table);
-      onActivate(table, rows);
-      setMessage({ kind: 'ok', text: `Imported ${rows.length} rows from "${table}".` });
+      await onPersist(table, 'database', rows);
+      setMessage({ kind: 'ok', text: `Imported and saved ${rows.length} rows from "${table}".` });
     } catch (err) {
       setMessage({ kind: 'error', text: (err as Error).message });
     } finally {
@@ -505,7 +693,7 @@ function DatabaseSection({ onActivate }: { onActivate: (name: string, rows: Reco
     <Panel>
       <Label>Database connection</Label>
       <div style={{ color: C.mut }} className="text-xs mt-1 mb-3">
-        Connects through the local backend (server/). Picking a table imports its rows into the browser, the same way a CSV upload would — the rest of the app always queries in-browser.
+        Connects through the local backend (server/). Picking a table imports its rows and saves them as a new dataset, the same way a CSV upload would.
       </div>
 
       <div className="grid sm:grid-cols-2 gap-3">

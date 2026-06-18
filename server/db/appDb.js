@@ -54,9 +54,23 @@ await pool.query(`
     updated_at TEXT NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS datasets (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    source_type TEXT NOT NULL,
+    row_count INTEGER NOT NULL,
+    column_count INTEGER NOT NULL,
+    schema_json JSONB NOT NULL,
+    data_json JSONB NOT NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+
   CREATE INDEX IF NOT EXISTS idx_queries_user ON queries(user_id);
   CREATE INDEX IF NOT EXISTS idx_widgets_user ON widgets(user_id);
   CREATE INDEX IF NOT EXISTS idx_dashboards_user ON dashboards(user_id);
+  CREATE INDEX IF NOT EXISTS idx_datasets_user ON datasets(user_id);
 `);
 
 const nowIso = () => new Date().toISOString();
@@ -130,5 +144,67 @@ function makeCollection(table, idPrefix) {
 export const queriesRepo = makeCollection('queries', 'q');
 export const widgetsRepo = makeCollection('widgets', 'w');
 export const dashboardsRepo = makeCollection('dashboards', 'board');
+
+/* ---------------- datasets ---------------- */
+
+export const datasetsRepo = {
+  async list(userId) {
+    const res = await pool.query(
+      `SELECT id, name, source_type, row_count, column_count, created_at, updated_at
+       FROM datasets WHERE user_id = $1 ORDER BY updated_at DESC`,
+      [userId]
+    );
+    return res.rows.map(row => ({
+      id: row.id,
+      name: row.name,
+      sourceType: row.source_type,
+      rowCount: row.row_count,
+      columnCount: row.column_count,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  },
+
+  async get(id, userId) {
+    const res = await pool.query('SELECT * FROM datasets WHERE id = $1 AND user_id = $2', [id, userId]);
+    const row = res.rows[0];
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      sourceType: row.source_type,
+      rowCount: row.row_count,
+      columnCount: row.column_count,
+      schema: row.schema_json,
+      rows: row.data_json,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  },
+
+  async create(userId, { name, sourceType, schema, rows }) {
+    const id = newId('ds');
+    const now = nowIso();
+    await pool.query(
+      `INSERT INTO datasets (id, user_id, name, source_type, row_count, column_count, schema_json, data_json, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
+      [id, userId, name, sourceType, rows.length, schema.length, JSON.stringify(schema), JSON.stringify(rows), now]
+    );
+    return {
+      id, name, sourceType, rowCount: rows.length, columnCount: schema.length, createdAt: now, updatedAt: now,
+    };
+  },
+
+  async rename(id, userId, name) {
+    await pool.query(
+      'UPDATE datasets SET name = $1, updated_at = $2 WHERE id = $3 AND user_id = $4',
+      [name, nowIso(), id, userId]
+    );
+  },
+
+  async remove(id, userId) {
+    await pool.query('DELETE FROM datasets WHERE id = $1 AND user_id = $2', [id, userId]);
+  },
+};
 
 export default pool;

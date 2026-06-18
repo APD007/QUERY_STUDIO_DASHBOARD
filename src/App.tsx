@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import { useQueryStore } from './modules/queries/store';
 import { useWidgetStore } from './modules/widgets/store';
 import { useDashboardStore } from './modules/dashboard/store';
+import { useDatasetStore } from './modules/datasets/store';
 import { useAuthStore } from './store/authStore';
 import { C } from './palette';
 
@@ -41,25 +42,28 @@ export default function App() {
   const loadQueries = useQueryStore(s => s.load);
   const loadWidgets = useWidgetStore(s => s.load);
   const loadDashboards = useDashboardStore(s => s.load);
+  const loadDatasets = useDatasetStore(s => s.load);
   const resetQueries = useQueryStore(s => s.reset);
   const resetWidgets = useWidgetStore(s => s.reset);
   const resetDashboards = useDashboardStore(s => s.reset);
+  const resetDatasets = useDatasetStore(s => s.reset);
 
   useEffect(() => { checkSession(); }, [checkSession]);
 
   useEffect(() => {
     if (status === 'authenticated') {
-      Promise.all([loadQueries(), loadWidgets(), loadDashboards()]).catch(err =>
+      Promise.all([loadQueries(), loadWidgets(), loadDashboards(), loadDatasets()]).catch(err =>
         console.error('Failed to load saved data:', err)
       );
     }
-  }, [status, loadQueries, loadWidgets, loadDashboards]);
+  }, [status, loadQueries, loadWidgets, loadDashboards, loadDatasets]);
 
   const handleLogout = async () => {
     await logout();
     resetQueries();
     resetWidgets();
     resetDashboards();
+    resetDatasets();
   };
 
   if (status === 'checking') {
