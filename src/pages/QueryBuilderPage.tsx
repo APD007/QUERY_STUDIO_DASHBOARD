@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import DatasetSidebar from '@/components/DatasetSidebar';
+import ResultTable from '@/components/ResultTable';
+import { toast } from '@/components/toast/store';
 
 import OperatorPalette from '@/modules/queries/components/OperatorPalette';
 import FieldExplorer from '@/modules/queries/components/FieldExplorer';
@@ -39,7 +41,7 @@ import { field, compare } from '@/lib/exprBuilders';
 import type { AggFn, ValidationResult, Query } from '@/types/expr';
 import type { DragData, DropData } from '@/types/dnd';
 import type { RowOp } from '@/lib/conditionOps';
-import { C, SEV } from '@/palette';
+import { C } from '@/palette';
 
 type Step = 'dataset' | 'columns' | 'filters' | 'aggregations' | 'groupby' | 'sql';
 const STEPS: { key: Step; label: string }[] = [
@@ -158,6 +160,7 @@ export default function QueryBuilderPage({
     if (!v.ok) return null;
     const id = saveQuery(draft);
     setDraft({ ...draft, id });
+    toast.success(`"${draft.name}" saved`);
     return id;
   };
 
@@ -367,53 +370,18 @@ export default function QueryBuilderPage({
                 </button>
               ))}
             </div>
-            <span style={{ color: C.mut }} className="text-xs">{result.rows.length} rows</span>
           </div>
 
           {resultView === 'table' ? (
-            <div className="mt-2 overflow-auto max-h-80" style={{ border: `1px solid ${C.line}`, borderRadius: 10 }}>
-              <table className="w-full text-sm">
-                <thead className="sticky top-0">
-                  <tr style={{ background: C.skyl }}>
-                    {resultCols.map(col => (
-                      <th
-                        key={col.label}
-                        onClick={() => sortByColumn(col.label)}
-                        style={{ color: C.ink }}
-                        className="text-left font-semibold px-3 py-2 cursor-pointer select-none whitespace-nowrap"
-                      >
-                        {col.label}
-                        {draft.orderBy?.field === col.label ? (draft.orderBy.dir === 'asc' ? ' ↑' : ' ↓') : ''}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.rows.map((row, i) => (
-                    <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
-                      {resultCols.map(col => {
-                        const isSev = col.label === 'severity';
-                        const val = row[col.label];
-                        return (
-                          <td key={col.label} className="px-3 py-1.5 whitespace-nowrap">
-                            {isSev ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <span style={{
-                                  background: SEV[String(val)] || C.mut,
-                                  width: 8, height: 8, borderRadius: 99, display: 'inline-block',
-                                }} />
-                                {String(val ?? '')}
-                              </span>
-                            ) : (
-                              <span style={{ color: C.text }}>{String(val ?? '')}</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="mt-2">
+              <ResultTable
+                columns={resultCols}
+                rows={result.rows}
+                name={draft.name}
+                maxHeight={320}
+                onSort={sortByColumn}
+                orderBy={draft.orderBy}
+              />
             </div>
           ) : (
             <div className="mt-2">

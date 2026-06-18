@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { buildSchema, type FieldSchema } from '@/modules/queries/schema';
 import { useDatasetStore } from '@/modules/datasets/store';
+import { toast } from '@/components/toast/store';
 import type { DatasetSourceType } from '@/lib/apiClient';
 
 export interface UploadEntry {
@@ -54,14 +55,17 @@ export const useUploadStore = create<UploadStoreState>((set, get) => ({
     useDatasetStore.getState().upload(name, sourceType, schema, rows)
       .then(() => {
         set(s => ({ uploads: s.uploads.map(u => (u.name === name ? { ...u, status: 'saved' } : u)) }));
+        toast.success(`"${name}" saved`);
       })
       .catch((err: Error) => {
         set(s => ({ uploads: s.uploads.map(u => (u.name === name ? { ...u, status: 'error', message: err.message } : u)) }));
+        toast.error(`"${name}" failed to save: ${err.message}`);
       });
   },
 
   failFile(name, message) {
     set(s => ({ uploads: s.uploads.map(u => (u.name === name ? { ...u, status: 'error', progress: 100, message } : u)) }));
+    toast.error(`"${name}": ${message}`);
   },
 
   dismiss(name) {

@@ -3,6 +3,8 @@ import { Layers, Sparkles, Code2, Sliders, Database, LayoutDashboard, LogOut, Lo
 
 import LoginPage from './pages/LoginPage';
 import ErrorBoundary from './components/ErrorBoundary';
+import ToastHost from './components/toast/ToastHost';
+import ConfirmHost from './components/confirm/ConfirmHost';
 import { useQueryStore } from './modules/queries/store';
 import { useWidgetStore } from './modules/widgets/store';
 import { useDashboardStore } from './modules/dashboard/store';
@@ -161,6 +163,9 @@ export default function App() {
           {tab === 'dashboard' && <Dashboard />}
         </Suspense>
       </ErrorBoundary>
+
+      <ToastHost />
+      <ConfirmHost />
     </div>
   );
 }

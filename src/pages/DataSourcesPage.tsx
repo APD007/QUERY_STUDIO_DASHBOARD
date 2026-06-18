@@ -15,6 +15,8 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem as Select
 import { useDataStore } from '@/store/dataStore';
 import { useDatasetStore } from '@/modules/datasets/store';
 import { useUploadStore } from '@/modules/uploads/store';
+import { confirmDialog } from '@/components/confirm/store';
+import { toast } from '@/components/toast/store';
 import { buildSchema, type FieldSchema } from '@/modules/queries/schema';
 import { sanitizeTableName } from '@/lib/tableName';
 import { coerceToRows } from '@/lib/flatten';
@@ -132,6 +134,14 @@ export default function DataSourcesPage() {
     }
   };
 
+  const deleteRow = async (r: ManagerRow) => {
+    if (!r.datasetId) return;
+    const ok = await confirmDialog({ message: `Delete dataset "${r.name}"? This cannot be undone.` });
+    if (!ok) return;
+    await removeDataset(r.datasetId);
+    toast.success(`"${r.name}" deleted`);
+  };
+
   return (
     <div className="p-4 mx-auto space-y-4" style={{ maxWidth: 1200 }}>
       <Panel>
@@ -189,7 +199,7 @@ export default function DataSourcesPage() {
                           />
                           <button
                             type="button"
-                            onClick={async () => { await renameDataset(renaming.id, renaming.value); setRenaming(null); }}
+                            onClick={async () => { await renameDataset(renaming.id, renaming.value); toast.success('Dataset renamed'); setRenaming(null); }}
                           >
                             <Check size={14} style={{ color: '#16a34a' }} />
                           </button>
@@ -220,7 +230,7 @@ export default function DataSourcesPage() {
                             <button type="button" onClick={() => setRenaming({ id: r.datasetId!, value: r.name })} title="Rename">
                               <Pencil size={14} style={{ color: C.mut }} />
                             </button>
-                            <button type="button" onClick={() => removeDataset(r.datasetId!)} title="Delete">
+                            <button type="button" onClick={() => deleteRow(r)} title="Delete">
                               <Trash2 size={14} style={{ color: C.mut }} />
                             </button>
                           </>

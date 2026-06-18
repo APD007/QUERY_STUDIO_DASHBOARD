@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import Editor, { type OnMount, type BeforeMount } from '@monaco-editor/react';
 import { format as formatSql } from 'sql-formatter';
 import {
-  Play, Save, Eraser, Copy, Wand2, Check, AlertCircle, Clock, Rows3,
+  Play, Save, Eraser, Copy, Wand2, Check, AlertCircle, Clock,
   PieChart as PieIcon, BarChart3, Activity, AreaChart as AreaIcon, Hash, Table2, Sliders,
 } from 'lucide-react';
 
@@ -10,6 +10,8 @@ import Panel from '@/components/Panel';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import DatasetSidebar from '@/components/DatasetSidebar';
+import ResultTable from '@/components/ResultTable';
+import { toast } from '@/components/toast/store';
 
 import ChartView from '@/modules/widgets/ChartView';
 import WidgetForm, { type WidgetFormState } from '@/modules/widgets/WidgetForm';
@@ -24,7 +26,7 @@ import { parseSqlToQuery } from '@/lib/sqlParser';
 import { buildDisplaySql } from '@/lib/sqlGenerator';
 import { emptyKpiMeta, emptyLogicalGroup, type Query } from '@/types/expr';
 import type { ChartType } from '@/types/widget';
-import { C, SEV } from '@/palette';
+import { C } from '@/palette';
 
 const CHART_PICKS: [ChartType, string, typeof PieIcon][] = [
   ['table', 'Table', Table2],
@@ -91,6 +93,7 @@ export default function StudioSql({
 
   const doSave = () => {
     const id = saveQuery(buildSqlQuery());
+    toast.success(`"${queryName}" saved`);
     return id;
   };
 
@@ -277,11 +280,6 @@ export default function StudioSql({
                 <Check size={14} /> Success
               </span>
             )}
-            {!error && (
-              <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: C.mut }}>
-                <Rows3 size={13} /> {result?.rows.length.toLocaleString()} rows
-              </span>
-            )}
             {execMs != null && (
               <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: C.mut }}>
                 <Clock size={13} /> {execMs.toFixed(1)} ms
@@ -294,44 +292,7 @@ export default function StudioSql({
               {error}
             </div>
           ) : result && (
-            <div className="overflow-auto max-h-96" style={{ border: `1px solid ${C.line}`, borderRadius: 10 }}>
-              <table className="w-full text-sm">
-                <thead className="sticky top-0">
-                  <tr style={{ background: C.skyl }}>
-                    {resultCols.map(col => (
-                      <th key={col.label} style={{ color: C.ink }} className="text-left font-semibold px-3 py-2 whitespace-nowrap">
-                        {col.label}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {result.rows.map((row, i) => (
-                    <tr key={i} style={{ borderTop: `1px solid ${C.line}` }}>
-                      {resultCols.map(col => {
-                        const isSev = col.label === 'severity';
-                        const val = row[col.label];
-                        return (
-                          <td key={col.label} className="px-3 py-1.5 whitespace-nowrap">
-                            {isSev ? (
-                              <span className="inline-flex items-center gap-1.5">
-                                <span style={{
-                                  background: SEV[String(val)] || C.mut,
-                                  width: 8, height: 8, borderRadius: 99, display: 'inline-block',
-                                }} />
-                                {String(val ?? '')}
-                              </span>
-                            ) : (
-                              <span style={{ color: C.text }}>{String(val ?? '')}</span>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <ResultTable columns={resultCols} rows={result.rows} name={queryName} maxHeight={384} />
           )}
         </Panel>
       )}

@@ -15,6 +15,8 @@ import { useDashboardStore, useActiveBoard } from './store';
 import { useWidgetStore } from '@/modules/widgets/store';
 import { useQueryStore } from '@/modules/queries/store';
 import { useDataStore } from '@/store/dataStore';
+import { confirmDialog } from '@/components/confirm/store';
+import { toast } from '@/components/toast/store';
 import { C } from '@/palette';
 
 export default function Dashboard() {
@@ -31,6 +33,21 @@ export default function Dashboard() {
   const [renamingWidgetId, setRenamingWidgetId] = useState<string | null>(null);
   const [widgetNameDraft, setWidgetNameDraft] = useState('');
   const [refreshTick, setRefreshTick] = useState(0);
+
+  const handleDeleteWidget = async (id: string, name: string) => {
+    const ok = await confirmDialog({ message: `Delete widget "${name}"? This also removes it from any dashboard it's on.` });
+    if (!ok) return;
+    deleteWidget(id);
+    toast.success(`"${name}" deleted`);
+  };
+
+  const handleDeleteBoard = async () => {
+    if (boards.length <= 1) return;
+    const ok = await confirmDialog({ message: `Delete dashboard "${board.name}"? This cannot be undone.` });
+    if (!ok) return;
+    deleteBoard(board.id);
+    toast.success(`"${board.name}" deleted`);
+  };
 
   const items = board.items;
   const layout: Layout = items.map(it => ({
@@ -99,7 +116,7 @@ export default function Dashboard() {
                       <button onClick={() => setRefreshTick(t => t + 1)} type="button" title="Refresh">
                         <RefreshCw size={13} style={{ color: C.mut }} />
                       </button>
-                      <button onClick={() => deleteWidget(w.id)} type="button" title="Delete widget">
+                      <button onClick={() => handleDeleteWidget(w.id, w.name)} type="button" title="Delete widget">
                         <Trash2 size={13} style={{ color: C.mut }} />
                       </button>
                     </div>
@@ -142,7 +159,7 @@ export default function Dashboard() {
               </button>
             )}
             <button
-              onClick={() => boards.length > 1 && deleteBoard(board.id)}
+              onClick={handleDeleteBoard}
               type="button"
               title="Delete dashboard"
               disabled={boards.length <= 1}
