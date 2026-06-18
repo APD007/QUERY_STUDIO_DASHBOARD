@@ -224,9 +224,6 @@ export default function StudioSql({
             style={{ color: C.ink }}
             className="font-bold text-lg bg-transparent outline-none flex-1 min-w-0"
           />
-          <span style={{ color: C.mut }} className="text-xs">
-            Active table <strong style={{ color: C.ink }}>{sourceName}</strong> · {data.length.toLocaleString()} rows
-          </span>
         </div>
         <div style={{ color: C.mut }} className="text-xs -mt-1 mb-2">
           Every dataset in the sidebar is queryable by name — e.g. <code style={{ background: C.page }} className="px-1 rounded">SELECT * FROM {sourceName} JOIN other_dataset ON ...</code>, not just the active one.

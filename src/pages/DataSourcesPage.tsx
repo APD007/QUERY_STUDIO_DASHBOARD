@@ -29,10 +29,10 @@ import { C } from '@/palette';
 
 type Section = 'demo' | 'files' | 'rest' | 'database';
 const SECTIONS: [Section, string, typeof Database][] = [
-  ['demo', 'Demo data', Database],
   ['files', 'Upload files', Upload],
   ['rest', 'REST API', Globe],
   ['database', 'Database connection', Server],
+  ['demo', 'Demo data', Database],
 ];
 
 const DB_TYPES: { value: DbType; label: string; wired: boolean }[] = [
@@ -62,14 +62,14 @@ interface ManagerRow {
 }
 
 export default function DataSourcesPage() {
-  const { sourceName, data, schema, loadDataset } = useDataStore();
+  const { sourceName, loadDataset } = useDataStore();
   const datasets = useDatasetStore(s => s.datasets);
   const activateDataset = useDatasetStore(s => s.activate);
   const uploadDataset = useDatasetStore(s => s.upload);
   const renameDataset = useDatasetStore(s => s.rename);
   const removeDataset = useDatasetStore(s => s.remove);
 
-  const [section, setSection] = useState<Section>('demo');
+  const [section, setSection] = useState<Section>('files');
   const [demos, setDemos] = useState<DemoDataset[] | null>(null);
   if (!demos) {
     import('@/data/demoDatasets').then(m => setDemos(m.DEMO_DATASETS));
@@ -145,14 +145,7 @@ export default function DataSourcesPage() {
   return (
     <div className="p-4 mx-auto space-y-4" style={{ maxWidth: 1200 }}>
       <Panel>
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex items-center gap-2">
-            <Database size={16} style={{ color: C.blue }} />
-            <span style={{ color: C.ink }} className="font-semibold text-sm">Active dataset: {sourceName}</span>
-            <span style={{ color: C.mut }} className="text-xs">{data.length.toLocaleString()} rows · {schema.length} fields</span>
-          </div>
-        </div>
-        <div className="flex items-center gap-1 p-1 rounded-lg mt-3" style={{ background: C.page, width: 'fit-content' }}>
+        <div className="flex items-center gap-1 p-1 rounded-lg" style={{ background: C.page, width: 'fit-content' }}>
           {SECTIONS.map(([k, l, I]) => (
             <button
               key={k}
