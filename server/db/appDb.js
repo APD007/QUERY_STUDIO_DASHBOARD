@@ -147,6 +147,22 @@ export const dashboardsRepo = makeCollection('dashboards', 'board');
 
 /* ---------------- datasets ---------------- */
 
+// Hosted Postgres (Render free tier, Neon, etc.) can drop the connection mid-query
+// on a cold start or under the load of a single large JSONB insert/read — transient,
+// and gone on retry. A real query error (bad SQL, constraint violation) won't match
+// this and rethrows immediately.
+async function withRetry(fn, attempts = 2, delayMs = 700) {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const transient = /connection terminated|terminating connection|connection ended|ECONNRESET/i.test(err.message);
+      if (!transient || i === attempts - 1) throw err;
+      await new Promise(r => setTimeout(r, delayMs));
+    }
+  }
+}
+
 export const datasetsRepo = {
   async list(userId) {
     const res = await pool.query(
@@ -166,7 +182,7 @@ export const datasetsRepo = {
   },
 
   async get(id, userId) {
-    const res = await pool.query('SELECT * FROM datasets WHERE id = $1 AND user_id = $2', [id, userId]);
+    const res = await withRetry(() => pool.query('SELECT * FROM datasets WHERE id = $1 AND user_id = $2', [id, userId]));
     const row = res.rows[0];
     if (!row) return null;
     return {
@@ -185,11 +201,11 @@ export const datasetsRepo = {
   async create(userId, { name, sourceType, schema, rows }) {
     const id = newId('ds');
     const now = nowIso();
-    await pool.query(
+    await withRetry(() => pool.query(
       `INSERT INTO datasets (id, user_id, name, source_type, row_count, column_count, schema_json, data_json, created_at, updated_at)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)`,
       [id, userId, name, sourceType, rows.length, schema.length, JSON.stringify(schema), JSON.stringify(rows), now]
-    );
+    ));
     return {
       id, name, sourceType, rowCount: rows.length, columnCount: schema.length, createdAt: now, updatedAt: now,
     };
