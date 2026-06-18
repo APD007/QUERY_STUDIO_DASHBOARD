@@ -3,7 +3,7 @@ import Editor, { type OnMount, type BeforeMount } from '@monaco-editor/react';
 import { format as formatSql } from 'sql-formatter';
 import {
   Play, Save, Eraser, Copy, Wand2, Check, AlertCircle, Clock, Rows3,
-  PieChart as PieIcon, BarChart3, Activity, AreaChart as AreaIcon, Hash, Table2, Sliders,
+  PieChart as PieIcon, BarChart3, Activity, AreaChart as AreaIcon, Hash, Table2, Sliders, Trash2,
 } from 'lucide-react';
 
 import Panel from '@/components/Panel';
@@ -20,6 +20,7 @@ import { useDataStore } from '@/store/dataStore';
 import { useSqlEditorStore } from '@/store/sqlEditorStore';
 import { useQueryDraftStore } from '@/store/queryDraftStore';
 import { parseSqlToQuery } from '@/lib/sqlParser';
+import { buildDisplaySql } from '@/lib/sqlGenerator';
 import { emptyKpiMeta, emptyLogicalGroup, type Query } from '@/types/expr';
 import type { ChartType } from '@/types/widget';
 import { C, SEV } from '@/palette';
@@ -40,7 +41,7 @@ export default function StudioSql({
   onGoToBuilder: () => void;
 }) {
   const { data, schema, sourceName } = useDataStore();
-  const { queries, saveQuery } = useQueryStore();
+  const { queries, saveQuery, deleteQuery } = useQueryStore();
   const { addWidget } = useWidgetStore();
   const sql = useSqlEditorStore(s => s.sql);
   const setSql = useSqlEditorStore(s => s.setSql);
@@ -124,6 +125,13 @@ export default function StudioSql({
 
   const handleCopy = () => { void navigator.clipboard.writeText(sql); };
   const handleClear = () => setSql('');
+
+  const loadSavedQuery = (q: Query) => {
+    setQueryName(q.name);
+    setSql(q.mode === 'sql' && q.rawSql ? q.rawSql : buildDisplaySql(q));
+    setResult(null);
+    setError(null);
+  };
 
   const handleLoadIntoBuilder = () => {
     const parsed = parseSqlToQuery(sql, sourceName);
@@ -237,6 +245,30 @@ export default function StudioSql({
         {builderError && (
           <div style={{ background: '#fef2f2', color: '#dc2626', borderRadius: 8 }} className="text-xs p-2.5 mt-2">
             {builderError}
+          </div>
+        )}
+      </Panel>
+
+      <Panel>
+        <Label>Saved queries</Label>
+        {queries.length === 0 ? (
+          <div style={{ color: C.mut }} className="text-sm py-2">Run and save a query to reuse it here.</div>
+        ) : (
+          <div className="flex flex-wrap gap-1.5 mt-2">
+            {queries.map(q => (
+              <div
+                key={q.id}
+                style={{ border: `1px solid ${C.line}` }}
+                className="flex items-center gap-1.5 rounded-full pl-3 pr-1.5 py-1"
+              >
+                <button onClick={() => loadSavedQuery(q)} type="button" style={{ color: C.ink }} className="text-sm font-medium">
+                  {q.name}
+                </button>
+                <button onClick={() => q.id && deleteQuery(q.id)} type="button">
+                  <Trash2 size={12} style={{ color: C.mut }} />
+                </button>
+              </div>
+            ))}
           </div>
         )}
       </Panel>

@@ -160,54 +160,116 @@ function DemoSection({ onActivate }: { onActivate: (name: string, rows: Record<s
 
 /* ============================================================ Files ============================================================ */
 
+interface UploadedFile {
+  name: string;
+  status: 'uploading' | 'ready' | 'error';
+  progress: number;
+  rows: Record<string, unknown>[];
+  schema: FieldSchema[];
+  message?: string;
+}
+
 function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<string, unknown>[]) => void }) {
   const [dragOver, setDragOver] = useState(false);
-  const [previews, setPreviews] = useState<{ name: string; rows: Record<string, unknown>[]; schema: FieldSchema[] }[]>([]);
+  const [files, setFiles] = useState<UploadedFile[]>([]);
   const csvRef = useRef<HTMLInputElement>(null);
   const excelRef = useRef<HTMLInputElement>(null);
   const jsonRef = useRef<HTMLInputElement>(null);
 
-  const addPreview = (name: string, rows: Record<string, unknown>[]) => {
-    setPreviews(p => [{ name, rows, schema: buildSchema(rows) }, ...p.filter(x => x.name !== name)]);
+  const startFile = (name: string) => {
+    setFiles(prev => [
+      { name, status: 'uploading', progress: 0, rows: [], schema: [] },
+      ...prev.filter(x => x.name !== name),
+    ]);
   };
 
-  const handleCsvFiles = (files: FileList | File[]) => {
-    Array.from(files).forEach(f => {
-      Papa.parse(f, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        complete: res => addPreview(f.name, res.data as Record<string, unknown>[]),
-      });
+  const setProgress = (name: string, progress: number) => {
+    setFiles(prev => prev.map(f => (f.name === name ? { ...f, progress } : f)));
+  };
+
+  const finishFile = (name: string, rows: Record<string, unknown>[]) => {
+    if (!rows.length) {
+      setFiles(prev => prev.map(f => (f.name === name
+        ? { ...f, status: 'error', progress: 100, message: 'No rows found — check the file has a header row and at least one data row.' }
+        : f)));
+      return;
+    }
+    setFiles(prev => prev.map(f => (f.name === name
+      ? { ...f, status: 'ready', progress: 100, rows, schema: buildSchema(rows) }
+      : f)));
+  };
+
+  const failFile = (name: string, message: string) => {
+    setFiles(prev => prev.map(f => (f.name === name ? { ...f, status: 'error', progress: 100, message } : f)));
+  };
+
+  const handleCsvFiles = (fileList: FileList | File[]) => {
+    Array.from(fileList).forEach(f => {
+      startFile(f.name);
+      const reader = new FileReader();
+      reader.onprogress = e => {
+        if (e.lengthComputable) setProgress(f.name, Math.round((e.loaded / e.total) * 100));
+      };
+      reader.onload = e => {
+        const text = String(e.target?.result ?? '');
+        Papa.parse(text, {
+          header: true,
+          dynamicTyping: true,
+          skipEmptyLines: true,
+          complete: res => {
+            if (res.errors.length) {
+              failFile(f.name, res.errors[0].message);
+              return;
+            }
+            finishFile(f.name, res.data as Record<string, unknown>[]);
+          },
+        });
+      };
+      reader.onerror = () => failFile(f.name, 'Could not read the file.');
+      reader.readAsText(f);
     });
   };
 
-  const handleExcelFiles = (files: FileList | File[]) => {
-    Array.from(files).forEach(f => {
+  const handleExcelFiles = (fileList: FileList | File[]) => {
+    Array.from(fileList).forEach(f => {
+      startFile(f.name);
       const reader = new FileReader();
-      reader.onload = async e => {
-        const buf = e.target?.result;
-        const XLSX = await import('xlsx');
-        const wb = XLSX.read(buf, { type: 'array' });
-        const sheet = wb.Sheets[wb.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[];
-        addPreview(f.name, rows);
+      reader.onprogress = e => {
+        if (e.lengthComputable) setProgress(f.name, Math.round((e.loaded / e.total) * 100));
       };
+      reader.onload = async e => {
+        try {
+          const buf = e.target?.result;
+          const XLSX = await import('xlsx');
+          const wb = XLSX.read(buf, { type: 'array' });
+          const sheet = wb.Sheets[wb.SheetNames[0]];
+          const rows = XLSX.utils.sheet_to_json(sheet, { defval: null }) as Record<string, unknown>[];
+          finishFile(f.name, rows);
+        } catch (err) {
+          failFile(f.name, (err as Error).message);
+        }
+      };
+      reader.onerror = () => failFile(f.name, 'Could not read the file.');
       reader.readAsArrayBuffer(f);
     });
   };
 
-  const handleJsonFiles = (files: FileList | File[]) => {
-    Array.from(files).forEach(f => {
+  const handleJsonFiles = (fileList: FileList | File[]) => {
+    Array.from(fileList).forEach(f => {
+      startFile(f.name);
       const reader = new FileReader();
+      reader.onprogress = e => {
+        if (e.lengthComputable) setProgress(f.name, Math.round((e.loaded / e.total) * 100));
+      };
       reader.onload = e => {
         try {
           const parsed = JSON.parse(String(e.target?.result));
-          addPreview(f.name, coerceToRows(parsed));
+          finishFile(f.name, coerceToRows(parsed));
         } catch {
-          addPreview(f.name, []);
+          failFile(f.name, 'Could not parse this file as JSON.');
         }
       };
+      reader.onerror = () => failFile(f.name, 'Could not read the file.');
       reader.readAsText(f);
     });
   };
@@ -253,29 +315,49 @@ function FilesSection({ onActivate }: { onActivate: (name: string, rows: Record<
           onChange={e => { if (e.target.files) handleJsonFiles(e.target.files); e.target.value = ''; }} />
       </div>
 
-      {previews.length > 0 && (
+      {files.length > 0 && (
         <div className="mt-3 space-y-2">
-          {previews.map(p => (
-            <div key={p.name} style={{ border: `1px solid ${C.line}`, borderRadius: 10 }} className="p-3">
+          <Label className="flex items-center gap-1.5"><Upload size={13} /> Uploaded files (this session)</Label>
+          {files.map(f => (
+            <div key={f.name} style={{ border: `1px solid ${f.status === 'error' ? '#fecaca' : C.line}`, borderRadius: 10 }} className="p-3">
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div>
-                  <span style={{ color: C.ink }} className="font-semibold text-sm">{p.name}</span>
-                  <span style={{ color: C.mut }} className="text-xs ml-2">{p.rows.length.toLocaleString()} rows · {p.schema.length} columns</span>
+                <div className="min-w-0">
+                  <span style={{ color: C.ink }} className="font-semibold text-sm">{f.name}</span>
+                  {f.status === 'uploading' && (
+                    <span style={{ color: C.mut }} className="text-xs ml-2">Uploading… {f.progress}%</span>
+                  )}
+                  {f.status === 'ready' && (
+                    <span style={{ color: C.mut }} className="text-xs ml-2">{f.rows.length.toLocaleString()} rows · {f.schema.length} columns</span>
+                  )}
+                  {f.status === 'error' && (
+                    <span style={{ color: '#dc2626' }} className="text-xs ml-2">{f.message}</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
-                  <Button size="sm" onClick={() => onActivate(p.name, p.rows)}><Check size={13} /> Use this dataset</Button>
-                  <button type="button" onClick={() => setPreviews(prev => prev.filter(x => x.name !== p.name))}>
+                  {f.status === 'ready' && (
+                    <Button size="sm" onClick={() => onActivate(f.name, f.rows)}><Check size={13} /> Use this dataset</Button>
+                  )}
+                  <button type="button" onClick={() => setFiles(prev => prev.filter(x => x.name !== f.name))}>
                     <X size={14} style={{ color: C.mut }} />
                   </button>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-1.5 mt-2">
-                {p.schema.map(f => (
-                  <span key={f.name} style={{ background: C.page, color: C.mut }} className="text-xs rounded-full px-2 py-0.5">
-                    {f.name} <span style={{ color: C.line }}>·</span> {f.type}
-                  </span>
-                ))}
-              </div>
+              {f.status === 'uploading' && (
+                <div className="mt-2 rounded-full overflow-hidden" style={{ background: C.page, height: 6 }}>
+                  <div
+                    style={{ width: `${f.progress}%`, background: C.blue, height: '100%', transition: 'width 0.15s ease' }}
+                  />
+                </div>
+              )}
+              {f.status === 'ready' && f.schema.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 mt-2">
+                  {f.schema.map(s => (
+                    <span key={s.name} style={{ background: C.page, color: C.mut }} className="text-xs rounded-full px-2 py-0.5">
+                      {s.name} <span style={{ color: C.line }}>·</span> {s.type}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
