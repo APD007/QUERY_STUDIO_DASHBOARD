@@ -1,5 +1,5 @@
 import { useEffect, useState, Suspense, lazy } from 'react';
-import { Layers, Code2, Sliders, Database, LayoutDashboard, LogOut, Loader2, type LucideIcon } from 'lucide-react';
+import { Layers, Sparkles, Code2, Sliders, Database, LayoutDashboard, LogOut, Loader2, type LucideIcon } from 'lucide-react';
 
 import LoginPage from './pages/LoginPage';
 import { useQueryStore } from './modules/queries/store';
@@ -8,6 +8,7 @@ import { useDashboardStore } from './modules/dashboard/store';
 import { useAuthStore } from './store/authStore';
 import { C } from './palette';
 
+const AiAssistantPage = lazy(() => import('./pages/AiAssistantPage'));
 const StudioSql = lazy(() => import('./pages/StudioSql'));
 const QueryBuilderPage = lazy(() => import('./pages/QueryBuilderPage'));
 const DataSourcesPage = lazy(() => import('./pages/DataSourcesPage'));
@@ -21,8 +22,9 @@ function PageFallback() {
   );
 }
 
-type Tab = 'studio' | 'builder' | 'sources' | 'dashboard';
+type Tab = 'ai' | 'studio' | 'builder' | 'sources' | 'dashboard';
 const TABS: [Tab, string, LucideIcon][] = [
+  ['ai', 'AI Assistant', Sparkles],
   ['studio', 'Studio', Code2],
   ['builder', 'Query Builder', Sliders],
   ['sources', 'Data Sources', Database],
@@ -31,7 +33,7 @@ const TABS: [Tab, string, LucideIcon][] = [
 
 export default function App() {
   const { status, user, checkSession, logout } = useAuthStore();
-  const [tab, setTab] = useState<Tab>('studio');
+  const [tab, setTab] = useState<Tab>('ai');
 
   const queryCount  = useQueryStore(s => s.queries.length);
   const widgetCount = useWidgetStore(s => s.widgets.length);
@@ -131,6 +133,9 @@ export default function App() {
 
       {/* ── Content ── */}
       <Suspense fallback={<PageFallback />}>
+        {tab === 'ai' && (
+          <AiAssistantPage onGoToStudio={() => setTab('studio')} onGoToDashboard={() => setTab('dashboard')} />
+        )}
         {tab === 'studio' && (
           <StudioSql onGoToDashboard={() => setTab('dashboard')} onGoToBuilder={() => setTab('builder')} />
         )}
