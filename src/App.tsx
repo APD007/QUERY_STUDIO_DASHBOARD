@@ -2,6 +2,7 @@ import { useEffect, useState, Suspense, lazy } from 'react';
 import { Layers, Sparkles, Code2, Sliders, Database, LayoutDashboard, LogOut, Loader2, type LucideIcon } from 'lucide-react';
 
 import LoginPage from './pages/LoginPage';
+import ErrorBoundary from './components/ErrorBoundary';
 import { useQueryStore } from './modules/queries/store';
 import { useWidgetStore } from './modules/widgets/store';
 import { useDashboardStore } from './modules/dashboard/store';
@@ -136,19 +137,21 @@ export default function App() {
       </div>
 
       {/* ── Content ── */}
-      <Suspense fallback={<PageFallback />}>
-        {tab === 'ai' && (
-          <AiAssistantPage onGoToStudio={() => setTab('studio')} onGoToDashboard={() => setTab('dashboard')} />
-        )}
-        {tab === 'studio' && (
-          <StudioSql onGoToDashboard={() => setTab('dashboard')} onGoToBuilder={() => setTab('builder')} />
-        )}
-        {tab === 'builder' && (
-          <QueryBuilderPage onGoToStudio={() => setTab('studio')} onGoToDashboard={() => setTab('dashboard')} />
-        )}
-        {tab === 'sources' && <DataSourcesPage />}
-        {tab === 'dashboard' && <Dashboard />}
-      </Suspense>
+      <ErrorBoundary key={tab}>
+        <Suspense fallback={<PageFallback />}>
+          {tab === 'ai' && (
+            <AiAssistantPage onGoToStudio={() => setTab('studio')} onGoToDashboard={() => setTab('dashboard')} />
+          )}
+          {tab === 'studio' && (
+            <StudioSql onGoToDashboard={() => setTab('dashboard')} onGoToBuilder={() => setTab('builder')} />
+          )}
+          {tab === 'builder' && (
+            <QueryBuilderPage onGoToStudio={() => setTab('studio')} onGoToDashboard={() => setTab('dashboard')} />
+          )}
+          {tab === 'sources' && <DataSourcesPage />}
+          {tab === 'dashboard' && <Dashboard />}
+        </Suspense>
+      </ErrorBoundary>
     </div>
   );
 }

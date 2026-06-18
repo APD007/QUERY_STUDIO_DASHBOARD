@@ -391,7 +391,6 @@ function FilesSection({
             header: true,
             dynamicTyping: true,
             skipEmptyLines: true,
-            worker: true, // keep large files off the main thread so the UI never appears to hang
             complete: res => {
               if (res.errors.length) {
                 failFile(f.name, res.errors[0].message);
