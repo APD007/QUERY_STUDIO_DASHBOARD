@@ -385,19 +385,25 @@ function FilesSection({
         if (e.lengthComputable) setProgress(f.name, Math.round((e.loaded / e.total) * 100));
       };
       reader.onload = e => {
-        const text = String(e.target?.result ?? '');
-        Papa.parse(text, {
-          header: true,
-          dynamicTyping: true,
-          skipEmptyLines: true,
-          complete: res => {
-            if (res.errors.length) {
-              failFile(f.name, res.errors[0].message);
-              return;
-            }
-            finishFile(f.name, res.data as Record<string, unknown>[]);
-          },
-        });
+        try {
+          const text = String(e.target?.result ?? '');
+          Papa.parse(text, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            worker: true, // keep large files off the main thread so the UI never appears to hang
+            complete: res => {
+              if (res.errors.length) {
+                failFile(f.name, res.errors[0].message);
+                return;
+              }
+              finishFile(f.name, res.data as Record<string, unknown>[]);
+            },
+            error: (err: Error) => failFile(f.name, err.message),
+          });
+        } catch (err) {
+          failFile(f.name, (err as Error).message);
+        }
       };
       reader.onerror = () => failFile(f.name, 'Could not read the file.');
       reader.readAsText(f);
